@@ -2,7 +2,7 @@ $ErrorActionPreference='Stop'
 $OutputEncoding=New-Object System.Text.UTF8Encoding($false)
 $root=Split-Path $PSScriptRoot -Parent
 $bridge=Join-Path $root 'Svidetel/Bridge.ps1'
-$exe=Join-Path $root 'tests/bin/Release/net9.0-windows/Svidetel.Tests.exe'
+$exe=Join-Path $root 'tests/bin/Release/net10.0-windows/Svidetel.Tests.exe'
 $ps=Join-Path $env:windir 'System32/WindowsPowerShell/v1.0/powershell.exe'
 $env:PSModulePath=(Join-Path $env:windir 'System32/WindowsPowerShell/v1.0/Modules')
 Import-Module ScheduledTasks
