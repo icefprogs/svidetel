@@ -1,0 +1,11 @@
+**/bin/
+**/obj/
+.build-home/
+artifacts/
+*.user
+*.suo
+.vs/
+*report*.json
+inventory.json
+journal.json
+test-data/
