@@ -1,0 +1,4 @@
+<Project Sdk="Microsoft.NET.Sdk">
+ <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net9.0-windows</TargetFramework><Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings></PropertyGroup>
+ <ItemGroup><Compile Include="../Svidetel/Models.cs" Link="Models.cs"/><Compile Include="../Svidetel/Engine.cs" Link="Engine.cs"/><Compile Include="../Svidetel/FolderInventory.cs" Link="FolderInventory.cs"/><None Include="../Svidetel/Bridge.ps1" Link="Bridge.ps1" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
+</Project>
