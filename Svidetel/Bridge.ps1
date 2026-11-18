@@ -7,7 +7,15 @@ $script:items = New-Object 'System.Collections.Generic.List[object]'
 $script:errors = New-Object 'System.Collections.Generic.List[string]'
 $script:runKeys = @('HKCU:\Software\Microsoft\Windows\CurrentVersion\Run','HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce','HKLM:\Software\Microsoft\Windows\CurrentVersion\Run','HKLM:\Software\Microsoft\Windows\CurrentVersion\RunOnce','HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Run','HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\RunOnce')
 function Add-Item($kind,$name,$command,$location,$state,$detail,$can=$false) {
- $script:items.Add([ordered]@{Id="$kind|$location|$name";Kind=$kind;Name=[string]$name;Command=[string]$command;Location=[string]$location;State=[string]$state;Detail=[string]$detail;CanDisable=[bool]$can})
+ $target=''
+ $missing=$false
+ if($kind -in @('run','service','startup','task') -and $command -and $command -notmatch ';') {
+  try {
+   $target=Exe-Path $command
+   $missing=Test-MissingLocalExe $target
+  } catch { $target=''; $missing=$false }
+ }
+ $script:items.Add([ordered]@{Id="$kind|$location|$name";Kind=$kind;Name=[string]$name;Command=[string]$command;Location=[string]$location;State=[string]$state;Detail=[string]$detail;CanDisable=[bool]$can;Executable=$target;MissingTarget=$missing})
 }
 function Section($name,[scriptblock]$block) { try { & $block } catch { $script:errors.Add("${name}: $($_.Exception.Message)") } }
 function Exe-Path([string]$command) {
@@ -15,6 +23,15 @@ function Exe-Path([string]$command) {
  if($c -match '^"([^"]+)"') { return $matches[1] }
  if($c -match '^(.*?\.(?:exe|com|sys|bat|cmd|ps1|vbs|js))(?=\s|$)') {return $matches[1]}
  return $c
+}
+function Test-MissingLocalExe([string]$path) {
+ if($path -notmatch '^[A-Za-z]:\\' -or [IO.Path]::GetExtension($path) -ne '.exe'){return $false}
+ $drive=[IO.DriveInfo]::new([IO.Path]::GetPathRoot($path))
+ if($drive.DriveType -ne [IO.DriveType]::Fixed){return $false}
+ $parent=Get-Item -LiteralPath ([IO.Path]::GetDirectoryName($path)) -ErrorAction Stop
+ if(-not $parent.PSIsContainer -or ($parent.Attributes -band [IO.FileAttributes]::ReparsePoint)){return $false}
+ try {$null=Get-Item -LiteralPath $path -ErrorAction Stop; return $false}
+ catch [System.Management.Automation.ItemNotFoundException] {return $true}
 }
 function Protect-Command([string]$command) {
  $p=Exe-Path $command
@@ -140,17 +157,57 @@ try {
   'scan' {
    Section 'Registry' {foreach($path in $script:runKeys) {if(Test-Path -LiteralPath $path){$key=Get-Item -LiteralPath $path; foreach($n in $key.GetValueNames()){Add-Item 'run' $n ([string]$key.GetValue($n)) $path 'Present' 'Login startup entry. Disabling does not stop an existing process.' $true}}}}
    Section 'Scheduled tasks' {foreach($t in Get-ScheduledTask){$commands=($t.Actions | ForEach-Object {"$($_.Execute) $($_.Arguments)"}) -join '; '; Add-Item 'task' $t.TaskName $commands $t.TaskPath ([string]$t.State) ("Author: "+$t.Author+"; triggers: "+(($t.Triggers.CimClass.CimClassName) -join ', ')) ($t.TaskPath -notlike '\Microsoft\*' -and $t.Author -notmatch '(?i)Microsoft' -and $t.Settings.Enabled)}}
-   Section 'Services' {foreach($s in Get-CimInstance Win32_Service){Add-Item 'service' $s.Name $s.PathName ('HKLM:\SYSTEM\CurrentControlSet\Services\'+$s.Name) ("$($s.State) / $($s.StartMode)") ("Account: "+$s.StartName+"; "+$s.DisplayName+". Disabling affects future starts, not current execution.") ($s.StartMode -ne 'Disabled' -and $s.PathName -notmatch '(?i)\\Windows\\|Defender|MsMpEng')}}
+   Section 'Services' {
+    foreach($s in Get-CimInstance Win32_Service){
+     Add-Item 'service' $s.Name $s.PathName ('HKLM:\SYSTEM\CurrentControlSet\Services\'+$s.Name) ("$($s.State) / $($s.StartMode)") ("Account: "+$s.StartName+"; "+$s.DisplayName+". Disabling affects future starts, not current execution.") ($s.StartMode -ne 'Disabled' -and $s.PathName -notmatch '(?i)\\Windows\\|Defender|MsMpEng')
+     $script:items[$script:items.Count-1].ProcessId=[int]$s.ProcessId
+    }
+   }
    Section 'Drivers' {foreach($s in Get-CimInstance Win32_SystemDriver){Add-Item 'driver' $s.Name $s.PathName 'Win32_SystemDriver' ("$($s.State) / $($s.StartMode)") 'Kernel driver. Read-only.'}}
    Section 'Startup folders' {$shell=New-Object -ComObject WScript.Shell; foreach($root in Startup-Roots){if(Test-Path -LiteralPath $root){foreach($f in Get-ChildItem -LiteralPath $root -File -Force){$target=$f.FullName;if($f.Extension -eq '.lnk'){$l=$shell.CreateShortcut($f.FullName);$target='"'+$l.TargetPath+'" '+$l.Arguments};Add-Item 'startup' $f.Name $target $f.FullName 'Present' 'Startup folder entry.' ($f.Extension -eq '.lnk')}}}}
-   Section 'Processes' {$procs=@(Get-CimInstance Win32_Process);$map=@{};foreach($p in $procs){$map[[int]$p.ProcessId]=$p.Name};foreach($p in $procs){Add-Item 'process' $p.Name $p.CommandLine ("PID "+$p.ProcessId) 'Running' ("Executable: "+$p.ExecutablePath+"; parent PID "+$p.ParentProcessId+" ("+$map[[int]$p.ParentProcessId]+"). Parent PID may have been reused; this is not proof of origin.")}}
+   Section 'Processes' {
+    $procs=@(Get-CimInstance Win32_Process)
+    $map=@{}
+    foreach($p in $procs){$map[[int]$p.ProcessId]=$p}
+    foreach($p in $procs){
+     $parent=$map[[int]$p.ParentProcessId]
+     $parentName=if($parent -and $parent.CreationDate -le $p.CreationDate){$parent.Name}else{'unverified'}
+     Add-Item 'process' $p.Name $p.CommandLine ("PID "+$p.ProcessId) 'Running' ("Executable: "+$p.ExecutablePath+"; parent PID "+$p.ParentProcessId+" ("+$parentName+").")
+     $row=$script:items[$script:items.Count-1]
+     $row.Executable=[string]$p.ExecutablePath
+     $row.ProcessId=[int]$p.ProcessId
+     if($p.CreationDate){$row.ProcessStartedAt=$p.CreationDate.ToUniversalTime().ToString('o')}
+    }
+   }
    Section 'WMI subscriptions' {foreach($b in Get-CimInstance -Namespace root/subscription -ClassName __FilterToConsumerBinding){Add-Item 'wmi' ([string]$b.Consumer) ([string]$b.Filter) 'root/subscription' 'Persistent binding' 'Permanent WMI subscription; read-only. May be legitimate.'};foreach($c in Get-CimInstance -Namespace root/subscription -ClassName __EventConsumer){Add-Item 'wmi' $c.Name ([string]$c.CommandLineTemplate+[string]$c.ScriptText) 'root/subscription/consumer' 'Consumer' 'Persistent event consumer; read-only.'}}
    Section 'Installed software' {foreach($root in @('HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall','HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall','HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall')){if(Test-Path $root){foreach($k in Get-ChildItem $root){$p=Get-ItemProperty $k.PSPath;if($p.DisplayName){Add-Item 'software' $p.DisplayName $p.UninstallString $k.Name ([string]$p.DisplayVersion) ("Publisher: "+$p.Publisher+"; install: "+$p.InstallLocation+". Uninstall through Windows Settings.")}}}}}
    Section 'TCP connections' {foreach($c in Get-NetTCPConnection -State Established,Listen){Add-Item 'network' ("PID "+$c.OwningProcess) ("$($c.LocalAddress):$($c.LocalPort) -> $($c.RemoteAddress):$($c.RemotePort)") ("TCP/"+$c.OwningProcess+"/"+$c.LocalAddress+"/"+$c.LocalPort+"/"+$c.RemoteAddress+"/"+$c.RemotePort) ([string]$c.State) 'Connection is not evidence of malware.'}}
+   Section 'UDP endpoints' {
+    foreach($u in (Get-NetUDPEndpoint | Sort-Object OwningProcess,LocalAddress,LocalPort -Unique)){
+     Add-Item 'network' ("PID "+$u.OwningProcess) ("$($u.LocalAddress):$($u.LocalPort)") ("UDP/"+$u.OwningProcess+"/"+$u.LocalAddress+"/"+$u.LocalPort) 'UDP' 'Local UDP endpoint. No remote peer is inferred.'
+    }
+   }
    Section 'Browser extensions' {foreach($browser in @(@('Chrome',"$env:LOCALAPPDATA\Google\Chrome\User Data"),@('Edge',"$env:LOCALAPPDATA\Microsoft\Edge\User Data"))){if(Test-Path -LiteralPath $browser[1]){foreach($profile in Get-ChildItem -LiteralPath $browser[1] -Directory){$ext=Join-Path $profile.FullName 'Extensions';if(Test-Path -LiteralPath $ext){foreach($id in Get-ChildItem -LiteralPath $ext -Directory){foreach($version in Get-ChildItem -LiteralPath $id.FullName -Directory){$manifest=Join-Path $version.FullName 'manifest.json';if(Test-Path -LiteralPath $manifest){try{$m=Get-Content -LiteralPath $manifest -Raw -Encoding UTF8|ConvertFrom-Json;Add-Item 'extension' ([string]$m.name) (($m.permissions+$m.host_permissions) -join ', ') $manifest ([string]$m.version) ($browser[0]+' / '+$profile.Name+' / '+$id.Name+'. Folder presence does not prove extension is enabled.')}catch{$script:errors.Add('Extension manifest: '+$_.Exception.Message)}}}}}}}}}
    [ordered]@{Items=@($script:items.ToArray());Errors=@($script:errors.ToArray())}|ConvertTo-Json -Depth 12 -Compress
   }
   'snapshot' {Snapshot $request.item | ConvertTo-Json -Depth 12 -Compress}
+  'process-origin' {
+   $found=@()
+   try {
+    $events=Get-WinEvent -FilterHashtable @{LogName='Security';Id=4688;StartTime=(Get-Date).AddHours(-24)} -MaxEvents 300
+   } catch {
+    if($_.FullyQualifiedErrorId -notlike 'NoMatchingEventsFound*'){throw}
+    $events=@()
+   }
+   foreach($event in $events){
+    $data=@{}
+    ([xml]$event.ToXml()).Event.EventData.Data | ForEach-Object {$data[$_.Name]=[string]$_.'#text'}
+    $pidText=[string]$data['NewProcessId']
+    if($pidText -notmatch '^0x[0-9a-f]+$'){continue}
+    $found+= [ordered]@{RecordId=$event.RecordId;Time=$event.TimeCreated.ToUniversalTime().ToString('o');ProcessId=[Convert]::ToInt32($pidText.Substring(2),16);Executable=[string]$data['NewProcessName'];ParentExecutable=[string]$data['ParentProcessName']}
+   }
+   ConvertTo-Json -InputObject @($found) -Depth 4 -Compress
+  }
   'monitor' {
    $returned=@();$failures=@()
    foreach($entry in $request.entries){try{$s=Snapshot $entry.Item;$back=switch($entry.Item.Kind){'run'{$s.Exists};'startup'{$s.Exists};'task'{$s.Enabled};'service'{$s.Start -ne 4};default{$false}};if($back){$returned+=([string]$entry.Item.Name)}}catch{$failures+=([string]$entry.Item.Name+': '+$_.Exception.Message)}}

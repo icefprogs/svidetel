@@ -10,11 +10,17 @@ public sealed record Finding
     public string State { get; init; } = "";
     public string Detail { get; init; } = "";
     public bool CanDisable { get; init; }
+    public string Executable { get; init; } = "";
+    public int ProcessId { get; init; }
+    public DateTimeOffset? ProcessStartedAt { get; init; }
+    public bool MissingTarget { get; init; }
     public string Category => Kind switch { "run" => "Реестр", "task" => "Задачи", "service" => "Службы", "driver" => "Драйверы", "startup" => "Папки запуска", "process" => "Процессы", "wmi" => "WMI", "software" => "Программы", "network" => "Сеть", "extension" => "Расширения", _ => Kind };
-    public string Recommendation => CanDisable ? "Проверить необходимость запуска" : "Только просмотр / защищено";
+    public string Recommendation => MissingTarget ? "Проверить осиротевшую запись" : CanDisable ? "Проверить необходимость запуска" : "Только просмотр";
     public string SearchText => $"{Name} {Kind} {Category} {Command} {Location} {Detail}";
 }
 public sealed record ScanResult(List<Finding> Items, List<string> Errors);
+public sealed record InventoryObservation(DateTimeOffset ObservedAt, string Changes);
+public sealed record ProcessOrigin(long RecordId, DateTimeOffset Time, int ProcessId, string Executable, string ParentExecutable);
 public sealed class JournalEntry
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N");
