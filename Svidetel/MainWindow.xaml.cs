@@ -127,8 +127,8 @@ public partial class MainWindow : Window
         }
         await Work(async () =>
         {
-            var path = item.Executable.Length == 0 ? item.Command : "\"" + item.Executable + "\"";
-            var data = await engine.Call<JsonElement>(new { op = "inspect", command = path });
+            var path = item.Executable.Length == 0 ? item.Command : item.Executable;
+            var data = await engine.Call<JsonElement>(new { op = "inspect", command = "\"" + path + "\"" });
             Details.Text += "\n\n" + JsonSerializer.Serialize(data, Engine.Json);
             Status.Text = "Подпись и SHA-256 проверены локально.";
         }, "Проверяю файл…");

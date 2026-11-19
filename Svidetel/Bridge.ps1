@@ -304,17 +304,20 @@ try {
      if (-not (Test-Path -LiteralPath $root)) { return }
      foreach ($profile in Get-ChildItem -LiteralPath $root -Directory) {
       if ($profile.Attributes -band [IO.FileAttributes]::ReparsePoint) { continue }
-      $ext = Join-Path $profile.FullName 'Extensions'
-      if (-not (Test-Path -LiteralPath $ext)) { continue }
-      foreach ($id in Get-ChildItem -LiteralPath $ext -Directory -Attributes !ReparsePoint) {
-       foreach ($version in Get-ChildItem -LiteralPath $id.FullName -Directory -Attributes !ReparsePoint) {
-        $path = Join-Path $version.FullName 'manifest.json'
-        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { continue }
-        Section "$browser manifest" {
-         $file = Get-Item -LiteralPath $path
-         if ($file.Length -gt 4MB -or ($file.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Skipped manifest.json (size or reparse point).' }
-         $manifest = Get-Content -LiteralPath $path -Raw -Encoding UTF8 | ConvertFrom-Json
-         Add-Item 'extension' ([string]$manifest.name) (($manifest.permissions + $manifest.host_permissions) -join ', ') $path ([string]$manifest.version) ($browser+' / '+$profile.Name+' / '+$id.Name+'. Folder presence does not prove extension is enabled.')
+      Section "$browser profile $($profile.Name)" {
+       $ext = Join-Path $profile.FullName 'Extensions'
+       if (-not (Test-Path -LiteralPath $ext -PathType Container)) { return }
+       if ((Get-Item -LiteralPath $ext).Attributes -band [IO.FileAttributes]::ReparsePoint) { return }
+       foreach ($id in Get-ChildItem -LiteralPath $ext -Directory -Attributes !ReparsePoint) {
+        foreach ($version in Get-ChildItem -LiteralPath $id.FullName -Directory -Attributes !ReparsePoint) {
+         $path = Join-Path $version.FullName 'manifest.json'
+         if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { continue }
+         Section "$browser manifest" {
+          $file = Get-Item -LiteralPath $path
+          if ($file.Length -gt 4MB -or ($file.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Skipped manifest.json (size or reparse point).' }
+          $manifest = Get-Content -LiteralPath $path -Raw -Encoding UTF8 | ConvertFrom-Json
+          Add-Item 'extension' ([string]$manifest.name) (($manifest.permissions + $manifest.host_permissions) -join ', ') $path ([string]$manifest.version) ($browser+' / '+$profile.Name+' / '+$id.Name+'. Folder presence does not prove extension is enabled.')
+         }
         }
        }
       }
