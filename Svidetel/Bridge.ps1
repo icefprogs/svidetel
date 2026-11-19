@@ -18,6 +18,59 @@ function Add-Item($kind,$name,$command,$location,$state,$detail,$can=$false) {
  $script:items.Add([ordered]@{Id="$kind|$location|$name";Kind=$kind;Name=[string]$name;Command=[string]$command;Location=[string]$location;State=[string]$state;Detail=[string]$detail;CanDisable=[bool]$can;Executable=$target;MissingTarget=$missing})
 }
 function Section($name,[scriptblock]$block) { try { & $block } catch { $script:errors.Add("${name}: $($_.Exception.Message)") } }
+function Read-Events($log, $id, $hours, $limit, $provider = '') {
+ $filter = @{LogName=$log; Id=$id; StartTime=(Get-Date).AddHours(-$hours)}
+ if ($provider) { $filter.ProviderName = $provider }
+ try { Get-WinEvent -FilterHashtable $filter -MaxEvents $limit }
+ catch { if ($_.FullyQualifiedErrorId -notlike 'NoMatchingEventsFound*') { throw } }
+}
+function Read-EventData($event) {
+ $data = @{}
+ foreach ($field in ([xml]$event.ToXml()).Event.EventData.Data) {
+  if ($field.Name) { $data[[string]$field.Name] = [string]$field.'#text' }
+ }
+ return $data
+}
+function Read-Launches {
+ $result = [ordered]@{
+  Processes=[Collections.Generic.List[object]]::new()
+  Tasks=[Collections.Generic.List[object]]::new()
+  Errors=[Collections.Generic.List[string]]::new()
+ }
+ $channels = @(
+  @{ Log='Security'; Id=4688; Pid='NewProcessId'; Image='NewProcessName'; Parent='ParentProcessName'; Source='Security 4688' },
+  @{ Log='Microsoft-Windows-Sysmon/Operational'; Id=1; Pid='ProcessId'; Image='Image'; Parent='ParentImage'; Source='Sysmon 1' }
+ )
+ foreach ($channel in $channels) {
+  try {
+   if ($channel.Id -eq 1 -and -not (Get-WinEvent -ListLog $channel.Log -ErrorAction SilentlyContinue)) { continue }
+   foreach ($event in Read-Events $channel.Log $channel.Id 24 300) {
+    $data = Read-EventData $event
+    $idText = [string]$data[$channel.Pid]
+    $processId = 0
+    if ($idText -match '^0x[0-9a-f]{1,8}$') { $processId = [Convert]::ToInt32($idText.Substring(2),16) }
+    else { $null = [int]::TryParse($idText,[ref]$processId) }
+    if ($processId -le 0 -or -not $data[$channel.Image]) { continue }
+    $result.Processes.Add([ordered]@{
+     RecordId=$event.RecordId; Time=$event.TimeCreated.ToUniversalTime().ToString('o'); ProcessId=$processId
+     Executable=$data[$channel.Image]; ParentExecutable=[string]$data[$channel.Parent]; Source=$channel.Source
+    })
+   }
+  } catch { $result.Errors.Add($channel.Source + ': ' + $_.Exception.Message) }
+ }
+ $taskLog = 'Microsoft-Windows-TaskScheduler/Operational'
+ try {
+  if (-not (Get-WinEvent -ListLog $taskLog).IsEnabled) { throw 'Task Scheduler history is disabled.' }
+  foreach ($event in Read-Events $taskLog 129 24 300) {
+   $data = Read-EventData $event
+   $processId = 0
+   if ($data.TaskName -and [int]::TryParse([string]$data.ProcessId,[ref]$processId) -and $processId -gt 0) {
+    $result.Tasks.Add([ordered]@{RecordId=$event.RecordId; Time=$event.TimeCreated.ToUniversalTime().ToString('o'); ProcessId=$processId; TaskPath=$data.TaskName})
+   }
+  }
+ } catch { $result.Errors.Add('Task Scheduler 129: ' + $_.Exception.Message) }
+ return $result
+}
 function Exe-Path([string]$command) {
  $c=[Environment]::ExpandEnvironmentVariables($command.Trim())
  if($c -match '^"([^"]+)"') { return $matches[1] }
@@ -156,6 +209,23 @@ try {
  switch($request.op) {
   'scan' {
    Section 'Registry' {foreach($path in $script:runKeys) {if(Test-Path -LiteralPath $path){$key=Get-Item -LiteralPath $path; foreach($n in $key.GetValueNames()){Add-Item 'run' $n ([string]$key.GetValue($n)) $path 'Present' 'Login startup entry. Disabling does not stop an existing process.' $true}}}}
+   Section 'Logon policy' {
+    foreach ($hive in @('HKLM:','HKCU:')) {
+     $path = $hive + '\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer\Run'
+     if (Test-Path -LiteralPath $path) {
+      $key = Get-Item -LiteralPath $path
+      foreach ($name in $key.GetValueNames()) {
+       Add-Item 'policy' $name ([string]$key.GetValue($name)) $path 'Present' 'Logon policy entry. Read-only.'
+      }
+     }
+    }
+    $path = 'HKLM:\Software\Microsoft\Windows NT\CurrentVersion\Winlogon'
+    $key = Get-Item -LiteralPath $path
+    foreach ($name in @('Shell','Userinit')) {
+     $value = $key.GetValue($name)
+     if ($value) { Add-Item 'policy' "Winlogon / $name" ([string]$value) $path 'Present' 'Windows logon configuration. Read-only.' }
+    }
+   }
    Section 'Scheduled tasks' {foreach($t in Get-ScheduledTask){$commands=($t.Actions | ForEach-Object {"$($_.Execute) $($_.Arguments)"}) -join '; '; Add-Item 'task' $t.TaskName $commands $t.TaskPath ([string]$t.State) ("Author: "+$t.Author+"; triggers: "+(($t.Triggers.CimClass.CimClassName) -join ', ')) ($t.TaskPath -notlike '\Microsoft\*' -and $t.Author -notmatch '(?i)Microsoft' -and $t.Settings.Enabled)}}
    Section 'Services' {
     foreach($s in Get-CimInstance Win32_Service){
@@ -180,34 +250,103 @@ try {
     }
    }
    Section 'WMI subscriptions' {foreach($b in Get-CimInstance -Namespace root/subscription -ClassName __FilterToConsumerBinding){Add-Item 'wmi' ([string]$b.Consumer) ([string]$b.Filter) 'root/subscription' 'Persistent binding' 'Permanent WMI subscription; read-only. May be legitimate.'};foreach($c in Get-CimInstance -Namespace root/subscription -ClassName __EventConsumer){Add-Item 'wmi' $c.Name ([string]$c.CommandLineTemplate+[string]$c.ScriptText) 'root/subscription/consumer' 'Consumer' 'Persistent event consumer; read-only.'}}
-   Section 'Installed software' {foreach($root in @('HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall','HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall','HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall')){if(Test-Path $root){foreach($k in Get-ChildItem $root){$p=Get-ItemProperty $k.PSPath;if($p.DisplayName){Add-Item 'software' $p.DisplayName $p.UninstallString $k.Name ([string]$p.DisplayVersion) ("Publisher: "+$p.Publisher+"; install: "+$p.InstallLocation+". Uninstall through Windows Settings.")}}}}}
+   Section 'Installed software' {
+    $registryRoots = @('HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall',
+     'HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall',
+     'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall')
+    foreach ($root in $registryRoots) {
+     if (-not (Test-Path -LiteralPath $root)) { continue }
+     foreach ($key in Get-ChildItem -LiteralPath $root) {
+      $entry = Get-ItemProperty -LiteralPath $key.PSPath
+      if (-not $entry.DisplayName) { continue }
+      Add-Item 'software' $entry.DisplayName $entry.UninstallString $key.Name ([string]$entry.DisplayVersion) ("Publisher: "+$entry.Publisher+"; install: "+$entry.InstallLocation)
+      $row = $script:items[$script:items.Count-1]
+      $row.Id = "software|$($key.PSPath)"
+      $row.Publisher = [string]$entry.Publisher
+      $row.InstallLocation = [string]$entry.InstallLocation
+      $row.IsMsi = $entry.WindowsInstaller -eq 1
+     }
+    }
+   }
+   $softwareObservedAt = [DateTime]::UtcNow.ToString('o')
+   $removals = [Collections.Generic.List[object]]::new()
+   Section 'MSI removal history' {
+    foreach ($event in Read-Events 'Application' 1034 720 500 'MsiInstaller') {
+     $fields = $event.Properties
+     if ($fields.Count -lt 5 -or [string]$fields[3].Value -ne '0') { continue }
+     $removals.Add([ordered]@{
+      RecordId=$event.RecordId; Time=$event.TimeCreated.ToUniversalTime().ToString('o')
+      Name=[string]$fields[0].Value; Version=[string]$fields[1].Value; Publisher=[string]$fields[4].Value
+     })
+    }
+   }
+   Section 'AppX packages' {
+    foreach ($package in Get-AppxPackage) {
+     Add-Item 'package' $package.Name $package.Publisher $package.InstallLocation ([string]$package.Version) 'Registered AppX/MSIX package for the current user.'
+    }
+   }
    Section 'TCP connections' {foreach($c in Get-NetTCPConnection -State Established,Listen){Add-Item 'network' ("PID "+$c.OwningProcess) ("$($c.LocalAddress):$($c.LocalPort) -> $($c.RemoteAddress):$($c.RemotePort)") ("TCP/"+$c.OwningProcess+"/"+$c.LocalAddress+"/"+$c.LocalPort+"/"+$c.RemoteAddress+"/"+$c.RemotePort) ([string]$c.State) 'Connection is not evidence of malware.'}}
    Section 'UDP endpoints' {
     foreach($u in (Get-NetUDPEndpoint | Sort-Object OwningProcess,LocalAddress,LocalPort -Unique)){
      Add-Item 'network' ("PID "+$u.OwningProcess) ("$($u.LocalAddress):$($u.LocalPort)") ("UDP/"+$u.OwningProcess+"/"+$u.LocalAddress+"/"+$u.LocalPort) 'UDP' 'Local UDP endpoint. No remote peer is inferred.'
     }
    }
-   Section 'Browser extensions' {foreach($browser in @(@('Chrome',"$env:LOCALAPPDATA\Google\Chrome\User Data"),@('Edge',"$env:LOCALAPPDATA\Microsoft\Edge\User Data"))){if(Test-Path -LiteralPath $browser[1]){foreach($profile in Get-ChildItem -LiteralPath $browser[1] -Directory){$ext=Join-Path $profile.FullName 'Extensions';if(Test-Path -LiteralPath $ext){foreach($id in Get-ChildItem -LiteralPath $ext -Directory){foreach($version in Get-ChildItem -LiteralPath $id.FullName -Directory){$manifest=Join-Path $version.FullName 'manifest.json';if(Test-Path -LiteralPath $manifest){try{$m=Get-Content -LiteralPath $manifest -Raw -Encoding UTF8|ConvertFrom-Json;Add-Item 'extension' ([string]$m.name) (($m.permissions+$m.host_permissions) -join ', ') $manifest ([string]$m.version) ($browser[0]+' / '+$profile.Name+' / '+$id.Name+'. Folder presence does not prove extension is enabled.')}catch{$script:errors.Add('Extension manifest: '+$_.Exception.Message)}}}}}}}}}
-   [ordered]@{Items=@($script:items.ToArray());Errors=@($script:errors.ToArray())}|ConvertTo-Json -Depth 12 -Compress
+   $chromiumRoots = [ordered]@{
+    Chrome='Google\Chrome\User Data'
+    Edge='Microsoft\Edge\User Data'
+    Brave='BraveSoftware\Brave-Browser\User Data'
+    Vivaldi='Vivaldi\User Data'
+    Yandex='Yandex\YandexBrowser\User Data'
+   }
+   foreach ($browser in $chromiumRoots.Keys) {
+    Section "$browser extensions" {
+     $root = Join-Path $env:LOCALAPPDATA $chromiumRoots[$browser]
+     if (-not (Test-Path -LiteralPath $root)) { return }
+     foreach ($profile in Get-ChildItem -LiteralPath $root -Directory) {
+      if ($profile.Attributes -band [IO.FileAttributes]::ReparsePoint) { continue }
+      $ext = Join-Path $profile.FullName 'Extensions'
+      if (-not (Test-Path -LiteralPath $ext)) { continue }
+      foreach ($id in Get-ChildItem -LiteralPath $ext -Directory -Attributes !ReparsePoint) {
+       foreach ($version in Get-ChildItem -LiteralPath $id.FullName -Directory -Attributes !ReparsePoint) {
+        $path = Join-Path $version.FullName 'manifest.json'
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { continue }
+        Section "$browser manifest" {
+         $file = Get-Item -LiteralPath $path
+         if ($file.Length -gt 4MB -or ($file.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Skipped manifest.json (size or reparse point).' }
+         $manifest = Get-Content -LiteralPath $path -Raw -Encoding UTF8 | ConvertFrom-Json
+         Add-Item 'extension' ([string]$manifest.name) (($manifest.permissions + $manifest.host_permissions) -join ', ') $path ([string]$manifest.version) ($browser+' / '+$profile.Name+' / '+$id.Name+'. Folder presence does not prove extension is enabled.')
+        }
+       }
+      }
+     }
+    }
+   }
+   Section 'Firefox extensions' {
+    $profiles = Join-Path $env:APPDATA 'Mozilla\Firefox\Profiles'
+    if (Test-Path -LiteralPath $profiles) {
+     foreach ($profile in Get-ChildItem -LiteralPath $profiles -Directory) {
+      if ($profile.Attributes -band [IO.FileAttributes]::ReparsePoint) { continue }
+      $path = Join-Path $profile.FullName 'extensions.json'
+      if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { continue }
+      Section 'Firefox profile' {
+       $file = Get-Item -LiteralPath $path
+       if ($file.Length -gt 16MB -or ($file.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Skipped extensions.json (size or reparse point).' }
+       $profileData = Get-Content -LiteralPath $path -Raw -Encoding UTF8 | ConvertFrom-Json
+       foreach ($addon in $profileData.addons) {
+        if ($addon.type -ne 'extension' -or -not $addon.id) { continue }
+        $name = if ($addon.defaultLocale.name) { $addon.defaultLocale.name } else { $addon.id }
+        $state = if ($addon.active -eq $true) { 'Active in profile' } elseif ($addon.active -eq $false) { 'Inactive in profile' } else { 'Unknown' }
+        Add-Item 'extension' "$name [$($addon.id)]" (($addon.userPermissions.permissions + $addon.userPermissions.origins) -join ', ') $path $state ("Firefox / "+$profile.Name+" / "+$addon.version)
+       }
+      }
+     }
+    }
+   }
+   $launches = Read-Launches
+   [ordered]@{Items=@($script:items.ToArray());Errors=@($script:errors.ToArray()); SoftwareObservedAt=$softwareObservedAt; Removals=$removals; Launches=$launches}|ConvertTo-Json -Depth 12 -Compress
   }
   'snapshot' {Snapshot $request.item | ConvertTo-Json -Depth 12 -Compress}
-  'process-origin' {
-   $found=@()
-   try {
-    $events=Get-WinEvent -FilterHashtable @{LogName='Security';Id=4688;StartTime=(Get-Date).AddHours(-24)} -MaxEvents 300
-   } catch {
-    if($_.FullyQualifiedErrorId -notlike 'NoMatchingEventsFound*'){throw}
-    $events=@()
-   }
-   foreach($event in $events){
-    $data=@{}
-    ([xml]$event.ToXml()).Event.EventData.Data | ForEach-Object {$data[$_.Name]=[string]$_.'#text'}
-    $pidText=[string]$data['NewProcessId']
-    if($pidText -notmatch '^0x[0-9a-f]+$'){continue}
-    $found+= [ordered]@{RecordId=$event.RecordId;Time=$event.TimeCreated.ToUniversalTime().ToString('o');ProcessId=[Convert]::ToInt32($pidText.Substring(2),16);Executable=[string]$data['NewProcessName'];ParentExecutable=[string]$data['ParentProcessName']}
-   }
-   ConvertTo-Json -InputObject @($found) -Depth 4 -Compress
-  }
+  'launch-evidence' { Read-Launches | ConvertTo-Json -Depth 8 -Compress }
   'monitor' {
    $returned=@();$failures=@()
    foreach($entry in $request.entries){try{$s=Snapshot $entry.Item;$back=switch($entry.Item.Kind){'run'{$s.Exists};'startup'{$s.Exists};'task'{$s.Enabled};'service'{$s.Start -ne 4};default{$false}};if($back){$returned+=([string]$entry.Item.Name)}}catch{$failures+=([string]$entry.Item.Name+': '+$_.Exception.Message)}}

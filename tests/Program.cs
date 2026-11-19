@@ -11,6 +11,26 @@ try
     var diff = InventoryDiff.Describe([f, new() { Id = "gone", Name = "Gone" }], [f with { Command = "new" }, new() { Id = "new", Name = "New" }]);
     Check(diff.Contains("~ Updater") && diff.Contains("− Gone") && diff.Contains("+ New"), "inventory detects changes/additions/removals");
     Check(InventoryDiff.Describe([new() { Id = "p", Kind = "process" }], []) == "", "volatile processes excluded from diff");
+    var install = new Finding
+    {
+        Id = "app", Kind = "software", Name = "Test App", State = "1.2", Publisher = "Test Co",
+        IsMsi = true, InstallLocation = @"C:\Program Files\Test App"
+    };
+    var now = DateTimeOffset.UtcNow;
+    var baseline = new ScanResult([install], []) { SoftwareObservedAt = now.AddDays(-1) };
+    var removal = new MsiRemoval(91, now.AddHours(-1), install.Name, install.State, install.Publisher);
+    var current = new ScanResult([], []) { SoftwareObservedAt = now, Removals = [removal] };
+    bool Exists(string path) => path == install.InstallLocation;
+    var remnants = SoftwareRemnants.Find(baseline, current, Exists);
+    Check(remnants.Count == 1 && !remnants[0].CanDisable && remnants[0].Detail.Contains("91"), "matching MSI success and existing former install path yields read-only evidence");
+    Check(SoftwareRemnants.Find(baseline, current with { Removals = [] }, Exists).Count == 0, "missing registration alone is insufficient");
+    Check(SoftwareRemnants.Find(baseline, current with { Removals = [removal with { Publisher = "Different Co" }] }, Exists).Count == 0, "same-name uninstall from another publisher is excluded");
+    Check(SoftwareRemnants.Find(baseline, current with { Removals = [removal with { Time = now.AddDays(-2) }] }, Exists).Count == 0, "uninstall before the observed install is excluded");
+    Check(SoftwareRemnants.Find(baseline, current with { Items = [install with { State = "1.3" }] }, Exists).Count == 0, "same-name upgrade is excluded");
+    Check(SoftwareRemnants.Find(baseline, current with { Items = [install with { Name = "Other", InstallLocation = install.InstallLocation + @"\Tools" }] }, Exists).Count == 0, "another installation using the folder is excluded");
+    Check(SoftwareRemnants.Find(baseline, current with { Errors = ["Installed software: denied"] }, Exists).Count == 0, "incomplete software inventory is insufficient");
+    Check(SoftwareRemnants.Find(baseline, current, _ => false).Count == 0, "absent folder is excluded");
+    Check(SoftwareRemnants.Find(current with { Items = remnants }, current with { Removals = [] }, Exists).Count == 1, "previously corroborated evidence survives later scans");
     e.Save("journal.json", new List<JournalEntry> { new() { Item = f, Before = JsonSerializer.SerializeToElement(new { Exists = true, Value = "a\"; $(bad)\nтест" }) } });
     Check(e.History()[0].Before.GetProperty("Value").GetString()!.Contains("тест"), "journal preserves exact Unicode/quoted data");
     e.Save("journal.json", new List<JournalEntry>()); Check(e.History().Count == 0, "atomic journal replacement");
@@ -26,7 +46,12 @@ try
     {
         var result = await e.Call<ScanResult>(new { op = "scan" }); Check(result.Items.Count > 0, "live read-only Windows scan returns inventory");
         Check(result.Items.Select(x => x.Id).Distinct().Count() == result.Items.Count, "live finding IDs are unique");
+        Check(result.HasSoftwareInventory && result.Items.Any(x => x.Kind == "software"), "live Windows uninstall metadata is available");
+        var launches = await e.Call<LaunchEvidence>(new { op = "launch-evidence" });
+        Check(launches.Processes.All(x => x.ProcessId > 0 && x.Executable.Length > 0) &&
+            launches.Tasks.All(x => x.ProcessId > 0 && x.TaskPath.StartsWith('\\')), "live provenance command returns valid event records");
         Console.WriteLine($"Inventory: {result.Items.Count} entries, {result.Errors.Count} coverage errors"); foreach (var error in result.Errors) Console.WriteLine(error);
+        foreach (var error in result.Launches.Errors) Console.WriteLine(error);
     }
     if (args.Contains("--integration"))
     {

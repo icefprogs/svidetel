@@ -9,16 +9,25 @@ namespace Svidetel;
 public partial class MainWindow
 {
     private Forms.NotifyIcon? tray;
-    private IReadOnlyList<ProcessOrigin> processOrigins = [];
+    private LaunchEvidence launchEvidence = new([], [], []);
     private bool preparingOptimization;
 
     private void LoadProcessOrigins()
     {
-        try { processOrigins = engine.Read<List<ProcessOrigin>>("process-origins.json") ?? []; }
+        try
+        {
+            launchEvidence = engine.Read<LaunchEvidence>("launch-evidence.json")
+                ?? new(engine.Read<List<ProcessOrigin>>("process-origins.json") ?? [], [], []);
+        }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
         {
             Status.Text = "Сохранённый журнал запуска не удалось прочитать.";
         }
+    }
+    private void SaveLaunches(LaunchEvidence evidence)
+    {
+        launchEvidence = evidence;
+        engine.Save("launch-evidence.json", evidence);
     }
     private readonly bool captureDemo = Environment.GetCommandLineArgs().Contains("--capture-demo");
 
@@ -31,7 +40,7 @@ public partial class MainWindow
         var visual = new DrawingVisual();
         using (var drawing = visual.RenderOpen())
         {
-            drawing.DrawRectangle(new SolidColorBrush(Color.FromRgb(27, 29, 28)), null, new Rect(0, 0, bitmap.PixelWidth, bitmap.PixelHeight));
+            drawing.DrawRectangle((Brush)Application.Current.Resources["Canvas"], null, new Rect(0, 0, bitmap.PixelWidth, bitmap.PixelHeight));
             drawing.DrawRectangle(new VisualBrush(content), null, new Rect(inset, inset, content.ActualWidth, content.ActualHeight));
         }
         bitmap.Render(visual);
@@ -46,18 +55,28 @@ public partial class MainWindow
     private void PrepareDemoCapture()
     {
         if (!captureDemo) return;
+        ThemeChoice.SelectedIndex = 0;
+        AccentMode.SelectedIndex = 0;
+        CompactRows.IsChecked = false;
+        MinimizeToTray.IsChecked = false;
+        WatchEnabled.IsChecked = false;
         LoadDemo();
         Loaded += (_, _) =>
         {
             Findings.SelectedIndex = 0;
             Capture((FrameworkElement)Content, "overview.png");
             OptimizeClick(this, new RoutedEventArgs());
+            ThemeChoice.SelectedIndex = 1;
+            AccentMode.SelectedIndex = 1;
+            Sections.SelectedItem = SettingsTab;
+            Capture((FrameworkElement)Content, "settings.png");
             Close();
         };
     }
 
     private string Evidence(Finding item)
     {
+        if (demo) return "";
         var advice = item.Kind switch
         {
             "task" => "Сверьте дату последнего запуска и действие в Планировщике заданий. Если приложение удалено, отключите его задачу в Планировщике.",
@@ -73,16 +92,30 @@ public partial class MainWindow
             var serviceLinks = string.Join(", ", related);
             if (serviceLinks.Length > 0) note += $"\n\nСвязь службы и процесса по PID {item.ProcessId} в снимке: {serviceLinks}";
         }
+        if (item.Kind == "task")
+        {
+            var taskPath = item.Location + item.Name;
+            var events = launchEvidence.Tasks.Where(entry => string.Equals(entry.TaskPath, taskPath, StringComparison.OrdinalIgnoreCase))
+                .Take(3).Select(entry => $"{entry.Time.ToLocalTime():g} · PID {entry.ProcessId} · запись {entry.RecordId}").ToList();
+            if (events.Count > 0) note += "\n\nЖурнал планировщика · событие 129\n" + string.Join("\n", events);
+        }
+        if (item.ProcessStartedAt is { } started && !string.IsNullOrWhiteSpace(item.Executable))
+        {
+            var origins = launchEvidence.Processes.Where(entry => entry.ProcessId == item.ProcessId &&
+                    Math.Abs((entry.Time - started).TotalSeconds) < 3 &&
+                    string.Equals(entry.Executable, item.Executable, StringComparison.OrdinalIgnoreCase))
+                .DistinctBy(entry => entry.Source);
+            foreach (var origin in origins)
+                note += $"\n\n{origin.Source} · запись {origin.RecordId}\nЗапуск {origin.Time.ToLocalTime():g}\nСоздавшее приложение: {origin.ParentExecutable}";
+            var scheduled = launchEvidence.Tasks.Where(entry => entry.ProcessId == item.ProcessId &&
+                Math.Abs((entry.Time - started).TotalSeconds) < 3).Select(entry => entry.TaskPath)
+                .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            if (scheduled.Count == 1)
+                note += $"\n\nПланировщик · те же PID и время запуска\n{scheduled[0]}";
+        }
         if (string.IsNullOrWhiteSpace(item.Executable)) return note;
-        var origin = item.ProcessStartedAt is { } started
-            ? processOrigins.FirstOrDefault(entry => entry.ProcessId == item.ProcessId &&
-                Math.Abs((entry.Time - started).TotalSeconds) < 3 &&
-                string.Equals(entry.Executable, item.Executable, StringComparison.OrdinalIgnoreCase))
-            : null;
-        if (origin != null)
-            note += $"\n\nЖурнал безопасности Windows · событие 4688, запись {origin.RecordId}\nЗапуск: {origin.Time.ToLocalTime():g}\nСоздавшее приложение: {origin.ParentExecutable}";
         var matches = items.Where(other => other.Id != item.Id &&
-            (item.Kind == "process" ? other.Kind is "run" or "startup" or "service" or "task" : other.Kind == "process") &&
+            (item.Kind == "process" ? other.Kind is "run" or "startup" or "service" or "task" or "policy" : other.Kind == "process") &&
             string.Equals(other.Executable, item.Executable, StringComparison.OrdinalIgnoreCase))
             .Select(other => $"{other.Category}: {other.Name} ({other.Location})").Take(8).ToArray();
         return matches.Length == 0 ? note : note + "\n\nСовпадает путь EXE (возможная связь)\n" + string.Join("\n", matches);
@@ -98,13 +131,23 @@ public partial class MainWindow
     {
         if (tray != null) return tray;
         var menu = new Forms.ContextMenuStrip();
-        void Open() => Dispatcher.Invoke(() => { Show(); WindowState = WindowState.Normal; Activate(); });
-        menu.Items.Add("Открыть Свидетель", null, (_, _) => Open());
+        void Open() => Dispatcher.Invoke(() => { WindowState = WindowState.Normal; Show(); Activate(); });
+        menu.Items.Add("Открыть «Свидетель»", null, (_, _) => Open());
+        var scan = menu.Items.Add("Сканировать ПК");
+        scan.Click += async (_, _) =>
+        {
+            Open();
+            await ScanSystem();
+        };
+        menu.Opening += (_, _) => scan.Enabled = !busy;
         menu.Items.Add("Выйти", null, (_, _) => Dispatcher.Invoke(() => { if (!busy) Close(); }));
-        tray = new Forms.NotifyIcon { Icon = System.Drawing.SystemIcons.Information, Text = "Свидетель", ContextMenuStrip = menu };
+        using var stream = Application.GetResourceStream(new Uri("pack://application:,,,/Assets/Witness.ico")).Stream;
+        using var source = new System.Drawing.Icon(stream);
+        var icon = (System.Drawing.Icon)source.Clone();
+        tray = new Forms.NotifyIcon { Icon = icon, Text = "Свидетель", ContextMenuStrip = menu };
         tray.DoubleClick += (_, _) => Open();
         tray.BalloonTipClicked += (_, _) => Open();
-        Closed += (_, _) => { tray.Dispose(); menu.Dispose(); };
+        Closed += (_, _) => { tray.Dispose(); menu.Dispose(); icon.Dispose(); };
         return tray;
     }
 
@@ -124,13 +167,11 @@ public partial class MainWindow
         }
         await Work(async () =>
         {
-            processOrigins = await engine.Call<List<ProcessOrigin>>(new { op = "process-origin" });
-            engine.Save("process-origins.json", processOrigins);
+            SaveLaunches(await engine.Call<LaunchEvidence>(new { op = "launch-evidence" }));
             if (Findings.SelectedItem is Finding item) ShowFinding(item);
-            Status.Text = processOrigins.Count == 0
-                ? "Событий 4688 за последние сутки нет. Проверьте, включён ли аудит создания процессов."
-                : $"Сохранено событий запуска: {processOrigins.Count}. Совпадения показаны в карточках процессов.";
-        }, "Читаю журнал безопасности Windows…");
+            Status.Text = $"События за сутки · процессы: {launchEvidence.Processes.Count} · задачи: {launchEvidence.Tasks.Count} · недоступные журналы: {launchEvidence.Errors.Count}";
+            if (launchEvidence.Errors.Count > 0) Coverage.Text += "\n\nЖурналы при обновлении\n" + string.Join("\n", launchEvidence.Errors);
+        }, "Читаю журналы запуска Windows…");
     }
 
     private async void OptimizeClick(object sender, RoutedEventArgs e)
@@ -153,8 +194,11 @@ public partial class MainWindow
         {
             Owner = this, Title = "Оптимизация", Width = 720, Height = demo ? 460 : 640,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Background = new SolidColorBrush(Color.FromRgb(27, 29, 28)), Content = panel
+            Content = panel
         };
+        dialog.SetResourceReference(BackgroundProperty, "Canvas");
+        dialog.SetResourceReference(ForegroundProperty, "Ink");
+        dialog.SourceInitialized += (_, _) => ApplyWindowTone(dialog);
         var heading = new TextBlock { Text = "Оптимизация", FontSize = 26, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 8) };
         DockPanel.SetDock(heading, Dock.Top);
         panel.Children.Add(heading);
@@ -169,7 +213,9 @@ public partial class MainWindow
         var actions = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 16, 0, 0) };
         DockPanel.SetDock(actions, Dock.Bottom);
         panel.Children.Add(actions);
-        var apply = new Button { Content = "Применить выбранное", IsEnabled = false, Background = new SolidColorBrush(Color.FromRgb(54, 94, 72)) };
+        var apply = new Button { Content = "Применить выбранное", IsEnabled = false };
+        apply.SetResourceReference(Button.BackgroundProperty, "Accent");
+        apply.SetResourceReference(Button.ForegroundProperty, "OnAccent");
         actions.Children.Add(apply);
         actions.Children.Add(new Button { Content = "Отмена", IsCancel = true });
         var list = new StackPanel();
