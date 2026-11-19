@@ -60,12 +60,18 @@ public partial class MainWindow
         CompactRows.IsChecked = false;
         MinimizeToTray.IsChecked = false;
         WatchEnabled.IsChecked = false;
+        CloseBackgroundApps.IsChecked = false;
+        PreferPower.IsChecked = false;
         LoadDemo();
         Loaded += (_, _) =>
         {
             Findings.SelectedIndex = 0;
             Capture((FrameworkElement)Content, "overview.png");
             OptimizeClick(this, new RoutedEventArgs());
+            ShowGameDemo();
+            Sections.SelectedItem = GamerTab;
+            Capture((FrameworkElement)Content, "gamer.png");
+            GamerButton.Content = "Режим геймера";
             ThemeChoice.SelectedIndex = 1;
             AccentMode.SelectedIndex = 1;
             Sections.SelectedItem = SettingsTab;
@@ -210,14 +216,24 @@ public partial class MainWindow
         };
         DockPanel.SetDock(intro, Dock.Top);
         panel.Children.Add(intro);
-        var actions = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 16, 0, 0) };
-        DockPanel.SetDock(actions, Dock.Bottom);
-        panel.Children.Add(actions);
+        var footer = new StackPanel { Margin = new Thickness(0, 16, 0, 0) };
+        DockPanel.SetDock(footer, Dock.Bottom);
+        panel.Children.Add(footer);
+        var progress = new ProgressBar { Height = 5, BorderThickness = new Thickness(0), Visibility = Visibility.Collapsed, Margin = new Thickness(0, 0, 0, 8) };
+        progress.SetResourceReference(ForegroundProperty, "Signal");
+        progress.SetResourceReference(BackgroundProperty, "Control");
+        var progressText = new TextBlock { TextWrapping = TextWrapping.Wrap, Visibility = Visibility.Collapsed, Margin = new Thickness(0, 0, 0, 8) };
+        progressText.SetResourceReference(ForegroundProperty, "Muted");
+        footer.Children.Add(progress);
+        footer.Children.Add(progressText);
+        var actions = new StackPanel { Orientation = Orientation.Horizontal };
+        footer.Children.Add(actions);
         var apply = new Button { Content = "Применить выбранное", IsEnabled = false };
         apply.SetResourceReference(Button.BackgroundProperty, "Accent");
         apply.SetResourceReference(Button.ForegroundProperty, "OnAccent");
         actions.Children.Add(apply);
-        actions.Children.Add(new Button { Content = "Отмена", IsCancel = true });
+        var done = new Button { Content = "Отмена", IsCancel = true };
+        actions.Children.Add(done);
         var list = new StackPanel();
         panel.Children.Add(new ScrollViewer { Content = list, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
         var selected = new List<Finding>();
@@ -239,31 +255,61 @@ public partial class MainWindow
         }
         AddGroup("Отключить будущий запуск", "Доступных записей нет", candidates);
         AddGroup("Закрыть приложение сейчас", "Подходящих открытых приложений нет", processCandidates);
-        apply.Click += (_, _) => dialog.DialogResult = true;
+        var applying = false;
+        dialog.Closing += (_, e) => e.Cancel = applying;
+        apply.Click += async (_, _) =>
+        {
+            if (applying || demo || selected.Count == 0) return;
+            applying = true;
+            apply.IsEnabled = done.IsEnabled = list.IsEnabled = false;
+            progressText.Visibility = progress.Visibility = Visibility.Visible;
+            progress.Maximum = selected.Count;
+            try
+            {
+                await Work(async () =>
+                {
+                    var failures = new List<string>();
+                    int disabled = 0, closed = 0, waiting = 0;
+                    for (var i = 0; i < selected.Count; i++)
+                    {
+                        var item = selected[i];
+                        progressText.Text = $"{i + 1} из {selected.Count} · {item.Name}";
+                        await System.Windows.Threading.Dispatcher.Yield(System.Windows.Threading.DispatcherPriority.Background);
+                        try
+                        {
+                            if (item.Kind == "process")
+                            {
+                                if (await InteractiveProcess.RequestClose(item)) closed++;
+                                else waiting++;
+                            }
+                            else { await engine.Disable(item); disabled++; }
+                        }
+                        catch (Exception ex) { failures.Add($"{item.Name}: {ex.Message}"); }
+                        finally { progress.Value = i + 1; }
+                    }
+                    Status.Text = $"Отключён автозапуск: {disabled} · Закрыто: {closed} · Ждут завершения: {waiting} · Ошибки: {failures.Count}";
+                    progressText.Text = Status.Text;
+                    progressText.ToolTip = failures.Count > 0 ? string.Join("\n", failures) : null;
+                }, "Применяю выбранные действия…");
+            }
+            finally
+            {
+                applying = false;
+                done.Content = "Готово";
+                done.IsEnabled = true;
+                apply.Visibility = Visibility.Collapsed;
+            }
+        };
         if (captureDemo)
             dialog.Loaded += (_, _) =>
             {
+                progress.Maximum = 3;
+                progress.Value = 2;
+                progressText.Text = "Демо · 3 из 3 · Field Notes";
+                progressText.Visibility = progress.Visibility = Visibility.Visible;
                 Capture((FrameworkElement)dialog.Content, "optimization.png");
                 dialog.Close();
             };
-        if (dialog.ShowDialog() != true || demo || selected.Count == 0) return;
-        await Work(async () =>
-        {
-            var failures = new List<string>();
-            var disabled = 0;
-            var closeRequests = 0;
-            foreach (var item in selected)
-            {
-                try
-                {
-                    if (item.Kind == "process") { InteractiveProcess.RequestClose(item); closeRequests++; }
-                    else { await engine.Disable(item); disabled++; }
-                }
-                catch (Exception ex) { failures.Add($"{item.Name}: {ex.Message}"); }
-            }
-            Status.Text = $"Отключено: {disabled}. Запросов на закрытие: {closeRequests}. Не выполнено: {failures.Count}.";
-            if (failures.Count > 0)
-                MessageBox.Show(this, string.Join("\n", failures), "Часть записей не изменена", MessageBoxButton.OK, MessageBoxImage.Information);
-        }, "Отключаю выбранные точки запуска…");
+        dialog.ShowDialog();
     }
 }

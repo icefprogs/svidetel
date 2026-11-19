@@ -7,7 +7,8 @@ namespace Svidetel;
 
 public partial class MainWindow
 {
-    private sealed record Preferences(int Theme = 0, int Accent = 0, bool Compact = false, bool Tray = false, bool Watch = false);
+    private sealed record Preferences(int Theme = 0, int Accent = 0, bool Compact = false, bool Tray = false, bool Watch = false,
+        bool CloseApps = false, bool HighPerformance = false);
     private const string PreferenceFile = "preferences.json";
     private Preferences preferences = new();
     private bool settingsReady, lightTheme;
@@ -29,6 +30,8 @@ public partial class MainWindow
         CompactRows.IsChecked = preferences.Compact;
         MinimizeToTray.IsChecked = preferences.Tray;
         WatchEnabled.IsChecked = preferences.Watch;
+        CloseBackgroundApps.IsChecked = preferences.CloseApps;
+        PreferPower.IsChecked = preferences.HighPerformance;
         settingsReady = true;
         ApplySettings();
         Activated += (_, _) =>
@@ -45,7 +48,7 @@ public partial class MainWindow
     {
         if (!settingsReady) return;
         preferences = new(ThemeChoice.SelectedIndex, AccentMode.SelectedIndex, CompactRows.IsChecked == true,
-            MinimizeToTray.IsChecked == true, WatchEnabled.IsChecked == true);
+            MinimizeToTray.IsChecked == true, WatchEnabled.IsChecked == true, CloseBackgroundApps.IsChecked == true, PreferPower.IsChecked == true);
         ApplySettings();
         if (captureDemo) return;
         try { engine.Save(PreferenceFile, preferences); }
@@ -75,6 +78,11 @@ public partial class MainWindow
         for (var i = 0; i < BrushNames.Length; i++) SetBrush(BrushNames[i], palette[i]);
         var accents = lightTheme ? LightAccents : DarkAccents;
         SetBrush("Accent", accents[Math.Clamp(AccentMode.SelectedIndex, 0, accents.Length - 1)]);
+        SetBrush("Signal", lightTheme ? "#3F6453" : "#AACCB7");
+        SetBrush("GlassControl", lightTheme ? "#DCE5E0" : "#4A554F");
+        SetGlassBrush("GlassFace", lightTheme ? "#EFFFFFFF" : "#383F4843", lightTheme ? "#9DF9FBF9" : "#161D2421", 90);
+        SetGlassBrush("GlassRim", lightTheme ? "#FFFDFEFF" : "#8FAAB9AF", lightTheme ? "#A7C8D1CA" : "#354A5650", 110);
+        SetGlassBrush("GlassReflection", lightTheme ? "#F5FFFFFF" : "#46C8D5CD", "#00FFFFFF", 110);
         Findings.RowHeight = CompactRows.IsChecked == true ? 30 : 38;
         ApplyWindowTone(this);
     }
@@ -82,6 +90,14 @@ public partial class MainWindow
     private static void SetBrush(string name, string hex)
     {
         var brush = new SolidColorBrush((Color)ColorConverter.ConvertFromString(hex));
+        brush.Freeze();
+        Application.Current.Resources[name] = brush;
+    }
+
+    private static void SetGlassBrush(string name, string highlight, string shadow, double angle)
+    {
+        var brush = new LinearGradientBrush((Color)ColorConverter.ConvertFromString(highlight),
+            (Color)ColorConverter.ConvertFromString(shadow), angle);
         brush.Freeze();
         Application.Current.Resources[name] = brush;
     }

@@ -19,14 +19,18 @@ internal static partial class InteractiveProcess
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception or UnauthorizedAccessException) { return false; }
     }
 
-    public static void RequestClose(Finding item)
+    public static async Task<bool> RequestClose(Finding item)
     {
         using var process = OpenVerified(item);
         if (process == null || !process.CloseMainWindow())
             throw new InvalidOperationException("Приложение недоступно, изменилось или не принимает запрос на закрытие.");
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        try { await process.WaitForExitAsync(timeout.Token); }
+        catch (OperationCanceledException) { return false; }
+        return true;
     }
 
-    private static Process? OpenVerified(Finding item)
+    internal static Process? OpenVerified(Finding item, bool requireWindow = true)
     {
         if (item.Kind != "process" || item.ProcessId <= 0 || item.ProcessId == Environment.ProcessId ||
             item.ProcessStartedAt is null || string.IsNullOrWhiteSpace(item.Executable))
@@ -38,7 +42,7 @@ internal static partial class InteractiveProcess
         {
             using var self = Process.GetCurrentProcess();
             using var current = WindowsIdentity.GetCurrent();
-            if (process.SessionId == 0 || process.SessionId != self.SessionId || process.MainWindowHandle == 0 ||
+            if (process.SessionId == 0 || process.SessionId != self.SessionId || requireWindow && process.MainWindowHandle == 0 ||
                 Math.Abs((process.StartTime.ToUniversalTime() - item.ProcessStartedAt.Value.UtcDateTime).TotalMilliseconds) > 10 ||
                 !string.Equals(process.MainModule?.FileName, item.Executable, StringComparison.OrdinalIgnoreCase) ||
                 item.Executable.StartsWith(Environment.GetFolderPath(Environment.SpecialFolder.Windows) + "\\", StringComparison.OrdinalIgnoreCase) ||

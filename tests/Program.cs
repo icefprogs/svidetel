@@ -7,6 +7,14 @@ var root = Path.Combine(Path.GetTempPath(), "Svidetel-tests-" + Guid.NewGuid().T
 try
 {
     var e = new Engine(root);
+    var local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+    Check(BackgroundApps.IsRecognized(Path.Combine(local, @"Microsoft\OneDrive\OneDrive.exe")), "known OneDrive install root can be optimized");
+    Check(!BackgroundApps.IsRecognized(Path.Combine(local, @"Microsoft\OneDriveBeta\OneDrive.exe")) &&
+        !BackgroundApps.IsRecognized(Path.Combine(local, @"Microsoft\OneDrive\..\..\OneDrive.exe")), "lookalike roots and paths outside the install are excluded");
+    foreach (var process in new[] { "steam", "Discord", "WinDivert", "winws", "Game" })
+        Check(!BackgroundApps.HasKnownName(process), $"{process} is excluded from automatic changes");
+    var telemetry = new GameTelemetry.Snapshot("fixture", true, [new(4, 31), new(8, 25), new(null, 92), new(30, 80), new(34, 20)]);
+    Check(telemetry.Median == 19 && telemetry.Jitter == 4 && telemetry.Missing == 1, "latency metrics exclude missing replies and do not bridge gaps");
     var f = new Finding { Id = "1", Kind = "task", Name = "Updater", State = "Ready", Command = "old" };
     var diff = InventoryDiff.Describe([f, new() { Id = "gone", Name = "Gone" }], [f with { Command = "new" }, new() { Id = "new", Name = "New" }]);
     Check(diff.Contains("~ Updater") && diff.Contains("− Gone") && diff.Contains("+ New"), "inventory detects changes/additions/removals");
