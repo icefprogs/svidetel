@@ -4,7 +4,11 @@
 
 Локальный инспектор Windows, с поиском скрытых от обычной автозагрузки точек запуска, отключением по кнопке и журналом восстановления.
 
-Разработчик: [@icefprogs](https://github.com/icefprogs). Лицензия MIT. [Готовые версии](https://github.com/icefprogs/svidetel/releases).
+[**Скачать «Свидетель» для Windows x64**](https://github.com/icefprogs/svidetel/releases/latest/download/Svidetel-windows-x64.zip)
+
+Распакуйте весь ZIP и запустите `Svidetel.exe`. Среда .NET входит в архив.
+
+Разработчик — [@icefprogs](https://github.com/icefprogs). Лицензия MIT. [Все выпуски](https://github.com/icefprogs/svidetel/releases).
 
 ![Обзор компьютера в деморежиме](docs/screenshots/overview.png)
 

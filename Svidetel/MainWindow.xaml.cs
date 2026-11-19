@@ -16,6 +16,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        VersionLabel.Text = $"Версия {typeof(MainWindow).Assembly.GetName().Version?.ToString(3)}";
         Categories.ItemsSource = categories;
         Categories.SelectedIndex = 0;
         AdminLabel.Text = new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator)

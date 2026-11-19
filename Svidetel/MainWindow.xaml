@@ -85,7 +85,7 @@
                   <DataGrid.Columns>
                     <DataGridTextColumn Header="Название" Binding="{Binding Name}" Width="2*"/>
                     <DataGridTextColumn Header="Источник" Binding="{Binding Category}" Width="104"/>
-                    <DataGridTextColumn Header="Состояние" Binding="{Binding State}" Width="130"/>
+                    <DataGridTextColumn Header="Состояние" Binding="{Binding State}" Width="160"/>
                     <DataGridTextColumn Header="Действие" Binding="{Binding Recommendation}" Width="2*"/>
                   </DataGrid.Columns>
                 </DataGrid>
@@ -137,6 +137,7 @@
               <CheckBox x:Name="WatchEnabled" Content="Уведомлять о возврате отключённого автозапуска" Checked="SettingsChanged" Unchecked="SettingsChanged"/>
               <TextBlock Text="Наблюдение работает, пока «Свидетель» открыт или свёрнут в трей." TextWrapping="Wrap"
                          Foreground="{DynamicResource Muted}" Margin="0,8,0,0"/>
+              <TextBlock x:Name="VersionLabel" Foreground="{DynamicResource Muted}" Margin="0,20,0,0"/>
             </StackPanel>
           </ScrollViewer>
         </TabItem>
