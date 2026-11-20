@@ -350,6 +350,32 @@ try {
   }
   'snapshot' {Snapshot $request.item | ConvertTo-Json -Depth 12 -Compress}
   'launch-evidence' { Read-Launches | ConvertTo-Json -Depth 8 -Compress }
+  'defender-status' {
+    $problems = [Collections.Generic.List[string]]::new()
+    $items = [Collections.Generic.List[object]]::new()
+    $status = $null
+    try { $status = Get-MpComputerStatus -ErrorAction Stop }
+    catch { $problems.Add('Defender: ' + $_.Exception.Message) }
+    try {
+      $filter = @{LogName='Microsoft-Windows-Windows Defender/Operational'; Id=1116,1117; StartTime=(Get-Date).AddDays(-7)}
+      $found = Get-WinEvent -FilterHashtable $filter -MaxEvents 20 -ErrorAction Stop
+      foreach ($evt in $found) {
+        $xml = [xml]$evt.ToXml()
+        $threat = $xml.Event.EventData.Data | Where-Object { $_.Name -eq 'Threat Name' } | Select-Object -First 1
+        $items.Add(@{When=$evt.TimeCreated.ToString('dd.MM HH:mm');Name=[string]$threat.'#text';Id=$evt.Id})
+      }
+    } catch {
+      if ($_.FullyQualifiedErrorId -notlike 'NoMatchingEventsFound*') { $problems.Add('Operational: ' + $_.Exception.Message) }
+    }
+    @{Enabled=$status.AntivirusEnabled;RealTime=$status.RealTimeProtectionEnabled;Errors=$problems.ToArray();Events=$items.ToArray()} |
+      ConvertTo-Json -Depth 5 -Compress
+  }
+  'defender-scan-file' {
+    $path = [string]$request.path
+    if ($path -notmatch '^[a-zA-Z]:\\' -or -not (Test-Path -LiteralPath $path -PathType Leaf)) { throw 'Select an existing local file.' }
+    Start-MpScan -ScanType CustomScan -ScanPath $path -ErrorAction Stop
+    '{"Requested":true}'
+  }
   'monitor' {
    $returned=@();$failures=@()
    foreach($entry in $request.entries){try{$s=Snapshot $entry.Item;$back=switch($entry.Item.Kind){'run'{$s.Exists};'startup'{$s.Exists};'task'{$s.Enabled};'service'{$s.Start -ne 4};default{$false}};if($back){$returned+=([string]$entry.Item.Name)}}catch{$failures+=([string]$entry.Item.Name+': '+$_.Exception.Message)}}

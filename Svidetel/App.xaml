@@ -1,5 +1,5 @@
 <Application x:Class="Svidetel.App" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" StartupUri="MainWindow.xaml">
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" ShutdownMode="OnMainWindowClose">
   <Application.Resources>
     <SolidColorBrush x:Key="Canvas" Color="#191A19"/>
     <SolidColorBrush x:Key="Panel" Color="#222422"/>

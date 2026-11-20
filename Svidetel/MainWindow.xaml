@@ -36,52 +36,246 @@
         </Viewbox>
         <StackPanel>
           <TextBlock Text="Свидетель" FontSize="30" FontWeight="SemiBold"/>
-          <TextBlock Text="Автозапуск и фоновые приложения Windows" Foreground="{DynamicResource Muted}" Margin="0,2,0,0"/>
+          <TextBlock Text="Игровые сессии и автозапуск Windows" Foreground="{DynamicResource Muted}" Margin="0,2,0,0"/>
         </StackPanel>
       </StackPanel>
     </DockPanel>
-    <Grid Grid.Row="1" Margin="0,0,0,16">
-      <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-      <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="12"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-      <Border CornerRadius="25" BorderBrush="{DynamicResource GlassRim}" BorderThickness="1" Background="{DynamicResource GlassFace}">
-        <Grid>
-          <Path HorizontalAlignment="Right" Data="M 0,0 L 184,0 Q 207,0 207,23 L 207,68 C 171,56 143,39 108,24 C 67,7 23,2 0,0 Z"
-                Fill="{DynamicResource GlassReflection}" IsHitTestVisible="False"/>
-          <Grid Margin="20,17">
-            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-            <StackPanel VerticalAlignment="Center" Margin="0,0,12,0">
-              <TextBlock Text="Фоновая нагрузка" FontSize="20" FontWeight="SemiBold"/>
-              <TextBlock Text="Снижает приоритет известных фоновых приложений" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,5,0,0"/>
-            </StackPanel>
-            <Button Grid.Column="1" x:Name="OptimizeButton" Content="Оптимизация" Click="QuickOptimizeClick"
-                    FontSize="16" FontWeight="SemiBold" MinWidth="160" MinHeight="48" Background="{DynamicResource Accent}"
-                    Foreground="{DynamicResource OnAccent}" Margin="0"/>
-          </Grid>
-        </Grid>
-      </Border>
-      <Border Grid.Column="2" CornerRadius="25" BorderBrush="{DynamicResource GlassRim}" BorderThickness="1" Background="{DynamicResource GlassFace}">
-        <Grid>
-          <Grid Margin="20,17">
-            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-            <StackPanel VerticalAlignment="Center" Margin="0,0,12,0">
-              <TextBlock Text="Игра и сеть" FontSize="20" FontWeight="SemiBold"/>
-              <TextBlock Text="Фоновая оптимизация и проверка фризов" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,5,0,0"/>
-            </StackPanel>
-            <Button Grid.Column="1" x:Name="GamerButton" Content="Режим геймера" Click="GamerModeClick"
-                    FontSize="16" FontWeight="SemiBold" MinWidth="160" MinHeight="48" Margin="0" Background="{DynamicResource GlassControl}"/>
-          </Grid>
-        </Grid>
-      </Border>
-      <Grid Grid.Row="1" Grid.ColumnSpan="3" x:Name="ProfileProgress" Visibility="Collapsed" Margin="4,8,4,0">
-        <Grid.ColumnDefinitions><ColumnDefinition Width="208"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-        <ProgressBar x:Name="ProfileProgressBar" Height="5" IsIndeterminate="True"
-                     Foreground="{DynamicResource Signal}" Background="{DynamicResource Control}" BorderThickness="0"/>
-        <TextBlock Grid.Column="1" x:Name="ProfileProgressText" Foreground="{DynamicResource Muted}" Margin="12,0,0,0"/>
-      </Grid>
+    <Grid Grid.Row="1" x:Name="ProfileProgress" Visibility="Collapsed" Margin="4,0,4,8">
+      <Grid.ColumnDefinitions><ColumnDefinition Width="208"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+      <ProgressBar x:Name="ProfileProgressBar" Height="5" IsIndeterminate="True"
+                   Foreground="{DynamicResource Signal}" Background="{DynamicResource Control}" BorderThickness="0"/>
+      <TextBlock Grid.Column="1" x:Name="ProfileProgressText" Foreground="{DynamicResource Muted}" Margin="12,0,0,0"/>
     </Grid>
     <Border Grid.Row="2" Background="{DynamicResource Panel}" CornerRadius="22" Padding="16" Margin="0,0,0,12">
-      <TabControl x:Name="Sections" Background="Transparent" BorderThickness="0">
-        <TabItem Header="Обзор">
+      <TabControl x:Name="Sections" TabStripPlacement="Left" Background="Transparent" BorderThickness="0">
+        <TabControl.ItemContainerStyle>
+          <Style TargetType="TabItem" BasedOn="{StaticResource {x:Type TabItem}}">
+            <Setter Property="Width" Value="176"/>
+            <Setter Property="Margin" Value="0,0,0,5"/>
+          </Style>
+        </TabControl.ItemContainerStyle>
+        <TabItem x:Name="HomeTab" Header="▦   Главная">
+          <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="20,8,4,4">
+            <StackPanel>
+              <TextBlock Text="Игровая сессия" FontSize="28" FontWeight="SemiBold" Margin="0,0,0,16"/>
+              <Border Background="{DynamicResource SessionHero}" CornerRadius="24" Padding="26" Margin="0,0,0,14">
+                <Grid>
+                  <Grid.ColumnDefinitions><ColumnDefinition Width="2*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                  <StackPanel Margin="0,0,8,0">
+                    <TextBlock x:Name="HomeGame" Text="Выбери игру" Foreground="#FFFFFF" FontSize="27" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                    <TextBlock Text="Запиши игровую сессию и отметь рывок, чтобы разобрать его после матча."
+                               Foreground="#ECECFF" TextWrapping="Wrap" Margin="0,7,0,16"/>
+                    <WrapPanel>
+                      <Button x:Name="GamerButton" Content="Начать сессию" Click="GamerModeClick" MinHeight="44" Padding="16,8" Background="#1B1D2A" Foreground="#FFFFFF"/>
+                      <Button Content="Настроить игру" Click="OpenGameTabClick" MinHeight="44" Background="#454374" Foreground="#FFFFFF" Margin="7,0,0,0"/>
+                    </WrapPanel>
+                  </StackPanel>
+                  <Viewbox Grid.Column="1" Margin="16" VerticalAlignment="Center" IsHitTestVisible="False">
+                    <Canvas Width="155" Height="82" Opacity=".8">
+                      <Path Data="M 1,62 L 38,62 L 53,54 L 66,33 L 80,62 L 136,62" Stroke="#EEEFFF" StrokeThickness="2"/>
+                      <Path Data="M 66,8 L 66,76" Stroke="#D4CEF8" StrokeDashArray="2,3"/>
+                      <Ellipse Canvas.Left="62" Canvas.Top="29" Width="8" Height="8" Fill="#FFFFFF"/>
+                    </Canvas>
+                  </Viewbox>
+                </Grid>
+              </Border>
+              <Border Background="{DynamicResource Well}" CornerRadius="20" Padding="18" Margin="0,0,0,12">
+                <StackPanel>
+                  <TextBlock Text="Последняя запись" FontSize="17" FontWeight="SemiBold"/>
+                  <TextBlock x:Name="HomeLatest" Text="Пока нет завершённых сессий" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,5,0,0"/>
+                  <Button Content="Открыть разбор" Click="OpenReviewClick" HorizontalAlignment="Left" Margin="0,12,0,0"/>
+                </StackPanel>
+              </Border>
+              <Border Background="{DynamicResource Well}" CornerRadius="20" Padding="18">
+                <DockPanel>
+                  <Button DockPanel.Dock="Right" x:Name="OptimizeButton" Content="Оптимизация" Click="QuickOptimizeClick" Margin="8,0,0,0"/>
+                  <StackPanel>
+                    <TextBlock Text="Фоновая нагрузка" FontSize="17" FontWeight="SemiBold"/>
+                    <TextBlock Text="Снизить приоритет известных фоновых приложений." Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                  </StackPanel>
+                </DockPanel>
+              </Border>
+            </StackPanel>
+          </ScrollViewer>
+        </TabItem>
+        <TabItem x:Name="GamerTab" Header="▷   Сессия">
+          <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="0,10,0,0">
+            <Grid Margin="4,4,4,8">
+              <Grid.ColumnDefinitions><ColumnDefinition Width="3*"/><ColumnDefinition Width="16"/><ColumnDefinition Width="2*"/></Grid.ColumnDefinitions>
+              <StackPanel>
+                <TextBlock x:Name="GamerNetworkTitle" Text="Задержка до роутера" FontSize="21" FontWeight="SemiBold"/>
+                <TextBlock x:Name="GamerSource" Text="Измерения начнутся при включении режима" Foreground="{DynamicResource Muted}" Margin="0,4,0,12" TextWrapping="Wrap"/>
+                <Border Background="{DynamicResource Well}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
+                        CornerRadius="16" Padding="12" Margin="0,0,0,12">
+                  <Grid Height="114" ClipToBounds="True">
+                    <Viewbox Stretch="Fill">
+                      <Canvas Width="500" Height="106">
+                        <Path Data="M 0,24 L 500,24 M 0,60 L 500,60 M 0,94 L 500,94"
+                              Stroke="{DynamicResource Line}" StrokeThickness="1"/>
+                        <Path x:Name="GamerPlot" Stroke="{DynamicResource Signal}" StrokeThickness="2" StrokeLineJoin="Round"/>
+                        <Path x:Name="GamerTimeouts" Stroke="{DynamicResource Muted}" StrokeThickness="2"/>
+                      </Canvas>
+                    </Viewbox>
+                    <TextBlock x:Name="GraphScale" HorizontalAlignment="Right" Foreground="{DynamicResource Muted}"
+                               FontSize="11" Background="{DynamicResource Well}"/>
+                  </Grid>
+                </Border>
+                <UniformGrid Rows="1">
+                  <StackPanel><TextBlock x:Name="GamerLatency" Text="—" FontSize="24"/><TextBlock Text="Медиана" Foreground="{DynamicResource Muted}"/></StackPanel>
+                  <StackPanel><TextBlock x:Name="GamerJitter" Text="—" FontSize="24"/><TextBlock Text="Разброс пинга" Foreground="{DynamicResource Muted}"/></StackPanel>
+                  <StackPanel><TextBlock x:Name="GamerMissing" Text="—" FontSize="24"/><TextBlock Text="Без ответа" Foreground="{DynamicResource Muted}"/></StackPanel>
+                  <StackPanel><TextBlock x:Name="GamerCpu" Text="—" FontSize="24"/><TextBlock Text="CPU" Foreground="{DynamicResource Muted}"/></StackPanel>
+                </UniformGrid>
+                <TextBlock x:Name="GamerNote" Text="График показывает локальное соединение. Задержка на сервере игры может отличаться."
+                           Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,16,0,0"/>
+                <Border Background="{DynamicResource Well}" CornerRadius="16" Padding="16" Margin="0,16,0,0">
+                  <StackPanel>
+                    <TextBlock Text="Процесс игры" FontSize="17" FontWeight="SemiBold"/>
+                    <TextBlock x:Name="GameProcessStats" Text="CPU — · Память —" FontSize="22" Margin="0,4,0,0"/>
+                    <TextBlock x:Name="GameProcessStatus" Text="Выберите EXE игры в настройках сессии."
+                               Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                  </StackPanel>
+                </Border>
+              </StackPanel>
+              <Border Grid.Column="2" Background="{DynamicResource GlassFace}" BorderBrush="{DynamicResource GlassRim}"
+                      BorderThickness="1" CornerRadius="20" Padding="16" VerticalAlignment="Top">
+                <StackPanel>
+                  <TextBlock Text="Действия режима" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                  <WrapPanel Margin="0,0,0,7">
+                    <Button x:Name="FreezeButton" Content="Поймал фриз" Click="FreezeClick" IsEnabled="False"/>
+                    <Button x:Name="SessionButton" Content="Начать" Click="GamerModeClick" Margin="8,0,0,0"/>
+                  </WrapPanel>
+                  <TextBlock x:Name="FreezeStatus" Text="Отметки доступны во время записи" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,0,0,5"/>
+                  <TextBlock x:Name="FrameStatus" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,0,0,8"/>
+                  <TextBlock x:Name="GamerSummary" Text="Steam, Discord, игры и WinDivert остаются активными."
+                             Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,0,0,12"/>
+                  <StackPanel x:Name="GameConfig" Margin="0,0,0,12">
+                    <TextBlock x:Name="GameExecutableLabel" Text="Игра не выбрана" TextTrimming="CharacterEllipsis" Margin="0,0,0,6"/>
+                    <WrapPanel Margin="0,0,0,8">
+                      <Button Content="Выбрать EXE игры" Click="ChooseGameClick" />
+                      <Button x:Name="ClearGameButton" Content="Сбросить" Click="ClearGameClick" IsEnabled="False"/>
+                    </WrapPanel>
+                    <CheckBox x:Name="BoostSelectedGame" Margin="0,0,0,10" IsEnabled="False">
+                      <TextBlock Text="Приоритет игры «Выше среднего»" TextWrapping="Wrap"/>
+                    </CheckBox>
+                    <TextBlock Text="IP для проверки задержки" Foreground="{DynamicResource Muted}" Margin="0,0,0,4"/>
+                    <TextBox x:Name="ProbeIp" MaxLength="64" AutomationProperties.Name="IP для проверки задержки"/>
+                    <TextBlock Text="Пустое поле — проверка до роутера" Foreground="{DynamicResource Muted}" Margin="0,4,0,0"/>
+                    <TextBlock Text="Профиль игры" Margin="0,10,0,4"/>
+                    <ComboBox x:Name="ProfilePicker" SelectionChanged="ProfilePickerChanged">
+                      <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Name}"/></DataTemplate></ComboBox.ItemTemplate>
+                    </ComboBox>
+                    <CheckBox x:Name="AutoGameProfile" Content="Включать при запуске игры" Margin="0,7,0,7"/>
+                    <WrapPanel>
+                      <Button Content="Сохранить профиль" Click="SaveProfileClick"/>
+                      <Button Content="Удалить профиль" Click="DeleteProfileClick" Margin="8,0,0,0"/>
+                    </WrapPanel>
+                  </StackPanel>
+                  <CheckBox x:Name="LowerGameBackground" Content="Снижать приоритет фона"
+                            Checked="SettingsChanged" Unchecked="SettingsChanged" Margin="0,0,0,8"/>
+                  <CheckBox x:Name="CloseBackgroundApps"
+                            Checked="SettingsChanged" Unchecked="SettingsChanged" Margin="0,0,0,8"
+                            ToolTip="Штатное закрытие, если у приложения есть окно. Приложение может попросить сохранить данные.">
+                    <TextBlock Text="Закрывать известные фоновые приложения" TextWrapping="Wrap"/>
+                  </CheckBox>
+                  <CheckBox x:Name="PreferPower"
+                            Checked="SettingsChanged" Unchecked="SettingsChanged"
+                            ToolTip="Включается только если план уже доступен в Windows. После сессии возвращается исходный план.">
+                    <TextBlock Text="План «Высокая производительность» от сети" TextWrapping="Wrap"/>
+                  </CheckBox>
+                  <TextBlock Text="Настройки применяются при следующем включении режима." Foreground="{DynamicResource Muted}"
+                             TextWrapping="Wrap" Margin="0,8,0,12"/>
+                  <WrapPanel>
+                    <Button Content="Игровой режим Windows" Click="WindowsGameSettingsClick" Margin="0,0,8,8"/>
+                    <Button Content="Лимиты загрузок Windows" Click="WindowsDownloadSettingsClick" Margin="0,0,0,8"/>
+                    <Button Content="Настройки графики Windows" Click="WindowsGraphicsSettingsClick" Margin="0,0,8,0"/>
+                  </WrapPanel>
+                </StackPanel>
+              </Border>
+            </Grid>
+          </ScrollViewer>
+        </TabItem>
+        <TabItem x:Name="ReviewTab" Header="∿   Разбор фризов">
+          <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="20,8,6,4">
+            <StackPanel>
+              <TextBlock Text="Разбор фризов" FontSize="28" FontWeight="SemiBold" Margin="0,0,0,12"/>
+              <TextBlock x:Name="MatchStats" TextWrapping="Wrap" Margin="0,0,0,10"/>
+              <ComboBox x:Name="MarksPicker" SelectionChanged="MarksChanged"
+                        AutomationProperties.Name="Отметки фризов" Width="210" HorizontalAlignment="Left" Margin="0,0,0,8">
+                <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Label}"/></DataTemplate></ComboBox.ItemTemplate>
+              </ComboBox>
+              <Border Background="{DynamicResource Well}" CornerRadius="18" Padding="14">
+                <Grid Height="155" ClipToBounds="True">
+                  <Viewbox Stretch="Fill">
+                    <Canvas Width="700" Height="145">
+                      <Path Data="M 0,15 L 700,15 M 0,54 L 700,54 M 0,97 L 700,97 M 0,140 L 700,140"
+                            Stroke="{DynamicResource Line}" StrokeThickness="1"/>
+                      <Path x:Name="FrameTimeline" Stroke="#A7A2F5" StrokeThickness="2"/>
+                      <Path x:Name="GpuTimeline" Stroke="#D8A45E" StrokeThickness="2"/>
+                      <Path x:Name="CpuTimeline" Stroke="#94C7AE" StrokeThickness="2"/>
+                      <Path x:Name="PingTimeline" Stroke="#6CB3DD" StrokeThickness="2"/>
+                      <Path x:Name="FreezeTimeline" Stroke="{DynamicResource Ink}" StrokeDashArray="2,3"/>
+                    </Canvas>
+                  </Viewbox>
+                </Grid>
+              </Border>
+              <WrapPanel Margin="0,10,0,7">
+                <TextBlock Text="Кадр" Foreground="#A7A2F5" Margin="0,0,16,0"/>
+                <TextBlock Text="GPU кадра" Foreground="#D8A45E" Margin="0,0,16,0"/>
+                <TextBlock Text="CPU системы" Foreground="#94C7AE" Margin="0,0,16,0"/>
+                <TextBlock Text="Пинг" Foreground="#6CB3DD"/>
+              </WrapPanel>
+              <TextBlock x:Name="MatchRange" Foreground="{DynamicResource Muted}" TextWrapping="Wrap"/>
+              <TextBlock Text="Сравнение замеров" FontSize="20" FontWeight="SemiBold" Margin="0,20,0,6"/>
+              <TextBlock Text="Повтори ту же сцену и настройки. Для каждого прогона нужно не менее 100 кадров." Foreground="{DynamicResource Muted}" TextWrapping="Wrap"/>
+              <TextBlock x:Name="ComparisonText" TextWrapping="Wrap" Margin="0,8,0,12"/>
+              <WrapPanel>
+                <Button x:Name="BeforeButton" Content="Сохранить как «До»" Click="SaveBeforeClick"/>
+                <Button x:Name="AfterButton" Content="Сохранить как «После»" Click="SaveAfterClick" Margin="8,0,0,0"/>
+              </WrapPanel>
+            </StackPanel>
+          </ScrollViewer>
+        </TabItem>
+        <TabItem x:Name="ServersTab" Header="⇄   Серверы">
+          <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="20,8,6,4">
+            <StackPanel>
+              <TextBlock Text="Сравнить серверы" FontSize="28" FontWeight="SemiBold" Margin="0,0,0,12"/>
+              <TextBlock Text="Укажи до восьми известных IP. На каждый адрес уйдут четыре ICMP-запроса." Foreground="{DynamicResource Muted}" TextWrapping="Wrap"/>
+              <TextBox x:Name="ServerList" Height="120" AcceptsReturn="True" MaxLength="1600" VerticalScrollBarVisibility="Auto"
+                       ToolTip="Одна строка — Название = IP" AutomationProperties.Name="Названия и адреса серверов" Margin="0,10,0,8"/>
+              <WrapPanel>
+                <Button x:Name="CompareServers" Content="Сравнить" Click="CompareServersClick"/>
+                <Button x:Name="UseServer" Content="Измерять по лучшему адресу" Click="UseServerClick" IsEnabled="False" Margin="8,0,0,0"/>
+              </WrapPanel>
+              <TextBlock x:Name="ServerResults" Text="Формат строки: Название = IP. Регион матчмейкинга выбирается в самой игре."
+                         Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,14,0,0"/>
+            </StackPanel>
+          </ScrollViewer>
+        </TabItem>
+        <TabItem x:Name="DefenderTab" Header="◇   Защита">
+          <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="20,8,6,4">
+            <StackPanel>
+              <TextBlock Text="Защита Windows" FontSize="28" FontWeight="SemiBold" Margin="0,0,0,12"/>
+              <Border Background="{DynamicResource Well}" CornerRadius="20" Padding="18">
+                <StackPanel>
+                  <TextBlock x:Name="DefenderTitle" Text="Получаю статус Microsoft Defender…" FontSize="20" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                  <TextBlock Text="Проверку в реальном времени и блокировку угроз выполняет Microsoft Defender." Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,5,0,12"/>
+                  <WrapPanel>
+                    <Button Content="Безопасность Windows" Click="OpenDefenderClick"/>
+                    <Button Content="Обновить журнал" Click="DefenderRefreshClick" Margin="8,0,0,0"/>
+                    <Button Content="Проверить файл" Click="DefenderScanClick" Margin="8,0,0,0"/>
+                  </WrapPanel>
+                </StackPanel>
+              </Border>
+              <TextBlock Text="Журнал обнаружений и действий" FontSize="19" Margin="0,16,0,6"/>
+              <TextBlock x:Name="DefenderEvents" TextWrapping="Wrap"/>
+              <TextBlock x:Name="DefenderError" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+              <TextBlock Text="Новые процессы с момента запуска «Свидетеля»" FontSize="19" TextWrapping="Wrap" Margin="0,16,0,6"/>
+              <TextBlock x:Name="RecentProcesses" Text="Наблюдение началось." Foreground="{DynamicResource Muted}" TextWrapping="Wrap"/>
+            </StackPanel>
+          </ScrollViewer>
+        </TabItem>
+        <TabItem x:Name="ScanTab" Header="⌕   Сканирование">
           <Grid Margin="0,12,0,0">
             <Grid.ColumnDefinitions><ColumnDefinition Width="169"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
             <DockPanel Margin="0,0,12,0" LastChildFill="True">
@@ -129,7 +323,7 @@
             </Grid>
           </Grid>
         </TabItem>
-        <TabItem Header="Восстановление">
+        <TabItem Header="↶   Восстановление">
           <Grid Margin="0,16,0,0">
             <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
             <TextBlock Text="Выберите изменение, чтобы восстановить параметры запуска. Если они уже изменились, приложение сообщит о конфликте."
@@ -138,69 +332,11 @@
             <Button Grid.Row="2" x:Name="RestoreButton" Content="Восстановить выбранное…" Click="RestoreClick" HorizontalAlignment="Left" Margin="0,12,0,0"/>
           </Grid>
         </TabItem>
-        <TabItem Header="Охват">
+        <TabItem Header="≡   Охват">
           <TextBox x:Name="Coverage" Margin="0,12,0,0" IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
                    Text="После сканирования здесь появятся охват источников, ошибки доступа и изменения относительно предыдущего снимка."/>
         </TabItem>
-        <TabItem x:Name="GamerTab" Header="Игровая сессия">
-          <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="0,10,0,0">
-            <Grid Margin="4,4,4,8">
-              <Grid.ColumnDefinitions><ColumnDefinition Width="3*"/><ColumnDefinition Width="16"/><ColumnDefinition Width="2*"/></Grid.ColumnDefinitions>
-              <StackPanel>
-                <TextBlock Text="Задержка до роутера" FontSize="21" FontWeight="SemiBold"/>
-                <TextBlock x:Name="GamerSource" Text="Измерения начнутся при включении режима" Foreground="{DynamicResource Muted}" Margin="0,4,0,12" TextWrapping="Wrap"/>
-                <Border Background="{DynamicResource Well}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
-                        CornerRadius="16" Padding="12" Margin="0,0,0,12">
-                  <Grid Height="114" ClipToBounds="True">
-                    <Viewbox Stretch="Fill">
-                      <Canvas Width="500" Height="106">
-                        <Path Data="M 0,24 L 500,24 M 0,60 L 500,60 M 0,94 L 500,94"
-                              Stroke="{DynamicResource Line}" StrokeThickness="1"/>
-                        <Path x:Name="GamerPlot" Stroke="{DynamicResource Signal}" StrokeThickness="2" StrokeLineJoin="Round"/>
-                        <Path x:Name="GamerTimeouts" Stroke="{DynamicResource Muted}" StrokeThickness="2"/>
-                      </Canvas>
-                    </Viewbox>
-                    <TextBlock x:Name="GraphScale" HorizontalAlignment="Right" Foreground="{DynamicResource Muted}"
-                               FontSize="11" Background="{DynamicResource Well}"/>
-                  </Grid>
-                </Border>
-                <UniformGrid Rows="1">
-                  <StackPanel><TextBlock x:Name="GamerLatency" Text="—" FontSize="24"/><TextBlock Text="Медиана" Foreground="{DynamicResource Muted}"/></StackPanel>
-                  <StackPanel><TextBlock x:Name="GamerJitter" Text="—" FontSize="24"/><TextBlock Text="Разброс пинга" Foreground="{DynamicResource Muted}"/></StackPanel>
-                  <StackPanel><TextBlock x:Name="GamerMissing" Text="—" FontSize="24"/><TextBlock Text="Без ответа" Foreground="{DynamicResource Muted}"/></StackPanel>
-                  <StackPanel><TextBlock x:Name="GamerCpu" Text="—" FontSize="24"/><TextBlock Text="CPU" Foreground="{DynamicResource Muted}"/></StackPanel>
-                </UniformGrid>
-                <TextBlock x:Name="GamerNote" Text="График показывает локальное соединение. Задержка на сервере игры может отличаться."
-                           Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,16,0,0"/>
-              </StackPanel>
-              <Border Grid.Column="2" Background="{DynamicResource GlassFace}" BorderBrush="{DynamicResource GlassRim}"
-                      BorderThickness="1" CornerRadius="20" Padding="16" VerticalAlignment="Top">
-                <StackPanel>
-                  <TextBlock Text="Действия режима" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,8"/>
-                  <TextBlock x:Name="GamerSummary" Text="Steam, Discord, игры и WinDivert остаются активными."
-                             Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,0,0,12"/>
-                  <CheckBox x:Name="CloseBackgroundApps"
-                            Checked="SettingsChanged" Unchecked="SettingsChanged" Margin="0,0,0,8"
-                            ToolTip="Штатное закрытие, если у приложения есть окно. Приложение может попросить сохранить данные.">
-                    <TextBlock Text="Закрывать известные фоновые приложения" TextWrapping="Wrap"/>
-                  </CheckBox>
-                  <CheckBox x:Name="PreferPower"
-                            Checked="SettingsChanged" Unchecked="SettingsChanged"
-                            ToolTip="Включается только если план уже доступен в Windows. После сессии возвращается исходный план.">
-                    <TextBlock Text="План «Высокая производительность» от сети" TextWrapping="Wrap"/>
-                  </CheckBox>
-                  <TextBlock Text="Настройки применяются при следующем включении режима." Foreground="{DynamicResource Muted}"
-                             TextWrapping="Wrap" Margin="0,8,0,12"/>
-                  <WrapPanel>
-                    <Button Content="Игровой режим Windows" Click="WindowsGameSettingsClick" Margin="0,0,8,8"/>
-                    <Button Content="Лимиты загрузок Windows" Click="WindowsDownloadSettingsClick" Margin="0,0,0,8"/>
-                  </WrapPanel>
-                </StackPanel>
-              </Border>
-            </Grid>
-          </ScrollViewer>
-        </TabItem>
-        <TabItem x:Name="SettingsTab" Header="Настройки">
+        <TabItem x:Name="SettingsTab" Header="⚙   Настройки">
           <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="0,8,0,0">
             <StackPanel Width="520" HorizontalAlignment="Left" Margin="8,8,16,8">
               <TextBlock Text="Внешний вид" FontSize="20" FontWeight="SemiBold" Margin="0,0,0,12"/>
@@ -218,7 +354,9 @@
               </DockPanel>
               <CheckBox x:Name="CompactRows" Content="Компактные строки" Checked="SettingsChanged" Unchecked="SettingsChanged" Margin="0,0,0,20"/>
               <TextBlock Text="Работа в фоне" FontSize="20" FontWeight="SemiBold" Margin="0,0,0,12"/>
-              <CheckBox x:Name="MinimizeToTray" Content="Сворачивать в трей" Checked="SettingsChanged" Unchecked="SettingsChanged" Margin="0,0,0,8"/>
+              <CheckBox x:Name="CloseToTray" Content="Крестик сворачивает окно в трей" Checked="SettingsChanged" Unchecked="SettingsChanged" Margin="0,0,0,8"/>
+              <CheckBox x:Name="StartWithWindows" Content="Запускать с Windows сразу в трее" Checked="StartupChanged" Unchecked="StartupChanged" Margin="0,0,0,8"/>
+              <CheckBox x:Name="MinimizeToTray" Content="Кнопка «Свернуть» убирает окно в трей" Checked="SettingsChanged" Unchecked="SettingsChanged" Margin="0,0,0,8"/>
               <CheckBox x:Name="WatchEnabled" Content="Уведомлять о возврате отключённого автозапуска" Checked="SettingsChanged" Unchecked="SettingsChanged"/>
               <TextBlock Text="Наблюдение работает, пока «Свидетель» открыт или свёрнут в трей." TextWrapping="Wrap"
                          Foreground="{DynamicResource Muted}" Margin="0,8,0,0"/>

@@ -5,7 +5,7 @@ using System.Runtime.InteropServices;
 
 namespace Svidetel;
 
-internal sealed partial class GameTelemetry
+internal sealed partial class GameTelemetry(IPAddress? configuredAddress = null)
 {
     internal sealed record Sample(long? Latency, int? Cpu);
     internal sealed record Snapshot(string Source, bool IsMeasuringNetwork, Sample[] History)
@@ -42,7 +42,7 @@ internal sealed partial class GameTelemetry
     {
         if (routeTurns++ % 8 == 0)
         {
-            var current = DefaultGateway();
+            var current = configuredAddress is null ? DefaultGateway() : (configuredAddress, "Указанный IP");
             if (!Equals(current, gateway)) history.Clear();
             gateway = current;
         }
@@ -54,7 +54,7 @@ internal sealed partial class GameTelemetry
             using var ping = new Ping();
             try
             {
-                var reply = await ping.SendPingAsync(target.Address, TimeSpan.FromMilliseconds(700), [], null, token);
+                var reply = await ping.SendPingAsync(target.Address, TimeSpan.FromMilliseconds(700), new byte[16], null, token);
                 if (reply.Status == IPStatus.Success) latency = reply.RoundtripTime;
             }
             catch (PingException) { }

@@ -9,25 +9,37 @@ internal sealed partial class PerformanceProfile(Engine engine)
 {
     private const string Journal = "performance-session.json";
     private static readonly Guid HighPerformance = new("8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c");
+    private readonly object gate = new();
+    private readonly HashSet<(int Pid, long Started)> denied = new();
     private FileStream? lease;
-    private sealed record Changes(List<Finding> Lowered, Guid? OriginalPower);
-    internal sealed record Result(int Lowered, int CloseRequests, bool PowerChanged, int Skipped);
+    private Changes? current;
+    private sealed record Changes(List<Finding> Lowered, Guid? OriginalPower, List<Finding>? Raised = null);
+    internal enum PowerResult { Off, Changed, AlreadyActive, Offline, Unavailable }
+    internal enum GameState { Waiting, Restricted, Observing, Boosted, AlreadyConfigured }
+    internal sealed record GameReading(GameState State, int Pid = 0, long StartedTicks = 0,
+        TimeSpan? CpuTime = null, long? Memory = null);
+    internal sealed record Result(int Lowered, int CloseRequests, PowerResult Power, int Skipped);
     internal sealed record Progress(int Done, int Total, string Name);
 
-    internal Result Begin(bool closeApps, bool preferPerformance, IProgress<Progress> progress)
+    internal Result Begin(bool optimizeBackground, bool closeApps, bool preferPerformance, IProgress<Progress> progress)
     {
         lease = Acquire();
         try
         {
             RestoreCore();
-            var candidates = Candidates();
-            var previousPower = preferPerformance && Forms.SystemInformation.PowerStatus.PowerLineStatus == Forms.PowerLineStatus.Online
-                ? ReadPower() : null;
-            if (previousPower == HighPerformance) previousPower = null;
-            var changes = new Changes([], previousPower);
+            denied.Clear();
+            var candidates = optimizeBackground || closeApps ? Candidates() : [];
+            bool pluggedIn = preferPerformance && Forms.SystemInformation.PowerStatus.PowerLineStatus == Forms.PowerLineStatus.Online;
+            var activePower = preferPerformance ? ReadPower() : null;
+            var previousPower = pluggedIn && activePower != HighPerformance ? activePower : null;
+            var power = !preferPerformance ? PowerResult.Off
+                : activePower == HighPerformance ? PowerResult.AlreadyActive
+                : pluggedIn ? PowerResult.Unavailable : PowerResult.Offline;
+            var changes = new Changes([], previousPower, []);
             engine.Save(Journal, changes);
 
             var powerChanged = previousPower.HasValue && SetPower(HighPerformance);
+            if (powerChanged) power = PowerResult.Changed;
             if (!powerChanged && previousPower.HasValue)
             {
                 changes = changes with { OriginalPower = null };
@@ -44,7 +56,7 @@ internal sealed partial class PerformanceProfile(Engine engine)
                     using var process = InteractiveProcess.OpenVerified(candidate, requireWindow: false);
                     if (process is null) { skipped++; continue; }
                     if (closeApps && process.MainWindowHandle != 0 && process.CloseMainWindow()) { closed++; continue; }
-                    if (process.PriorityClass != ProcessPriorityClass.Normal) continue;
+                    if (!optimizeBackground || process.PriorityClass != ProcessPriorityClass.Normal) continue;
                     changes.Lowered.Add(candidate);
                     engine.Save(Journal, changes);
                     process.PriorityClass = ProcessPriorityClass.BelowNormal;
@@ -52,7 +64,8 @@ internal sealed partial class PerformanceProfile(Engine engine)
                 }
                 catch (Exception ex) when (Unavailable(ex)) { skipped++; }
             }
-            return new(lowered, closed, powerChanged, skipped);
+            current = changes;
+            return new(lowered, closed, power, skipped);
         }
         catch
         {
@@ -71,9 +84,77 @@ internal sealed partial class PerformanceProfile(Engine engine)
 
     internal void End()
     {
-        if (lease is null) return;
-        try { RestoreCore(); }
-        finally { Release(); }
+        lock (gate)
+        {
+            if (lease is null) return;
+            current = null;
+            try { RestoreCore(); }
+            finally { Release(); }
+        }
+    }
+
+    internal GameReading ObserveGame(string executable, bool boost)
+    {
+        lock (gate)
+        {
+            if (current is null || !GameTarget.CanSelect(executable)) return new(GameState.Waiting);
+            GameReading? best = null;
+            Finding? target = null;
+            bool restricted = false;
+            var candidates = Process.GetProcessesByName(Path.GetFileNameWithoutExtension(executable));
+            foreach (var candidate in candidates)
+            {
+                using (candidate)
+                {
+                    if (candidate.Id == Environment.ProcessId) continue;
+                    try
+                    {
+                        if (!string.Equals(candidate.MainModule?.FileName, executable, StringComparison.OrdinalIgnoreCase)) continue;
+                        var item = new Finding { Kind = "process", Name = candidate.ProcessName, ProcessId = candidate.Id,
+                            ProcessStartedAt = candidate.StartTime.ToUniversalTime(), Executable = executable };
+                        using var process = InteractiveProcess.OpenVerified(item, requireWindow: false);
+                        if (process is null) { restricted = true; continue; }
+                        var reading = new GameReading(GameState.Observing, process.Id,
+                            item.ProcessStartedAt.Value.UtcTicks, process.TotalProcessorTime, process.WorkingSet64);
+                        if (best is not null && best.Memory >= reading.Memory) continue;
+                        best = reading;
+                        target = item;
+                    }
+                    catch (Exception ex) when (Unavailable(ex)) { restricted = true; }
+                }
+            }
+            if (best is null || target is null) return new(restricted ? GameState.Restricted : GameState.Waiting);
+            if (!boost) return best;
+            try
+            {
+                using var process = InteractiveProcess.OpenVerified(target, requireWindow: false);
+                return best with { State = process is null ? GameState.Restricted : BoostGame(current, target, process) };
+            }
+            catch (Exception ex) when (Unavailable(ex)) { return best with { State = GameState.Restricted }; }
+        }
+    }
+
+    private GameState BoostGame(Changes changes, Finding item, Process process)
+    {
+        var raised = changes.Raised!;
+        var key = (item.ProcessId, item.ProcessStartedAt!.Value.UtcTicks);
+        if (denied.Contains(key)) return GameState.Restricted;
+        var priority = process.PriorityClass;
+        var tracked = raised.Any(saved => saved.ProcessId == item.ProcessId && saved.ProcessStartedAt == item.ProcessStartedAt &&
+            string.Equals(saved.Executable, item.Executable, StringComparison.OrdinalIgnoreCase));
+        if (tracked) return priority == ProcessPriorityClass.AboveNormal ? GameState.Boosted : GameState.AlreadyConfigured;
+        if (priority != ProcessPriorityClass.Normal || raised.Count >= 128) return GameState.AlreadyConfigured;
+        raised.Add(item);
+        engine.Save(Journal, changes);
+        try { process.PriorityClass = ProcessPriorityClass.AboveNormal; }
+        catch (Win32Exception)
+        {
+            raised.Remove(item);
+            engine.Save(Journal, changes);
+            denied.Add(key);
+            return GameState.Restricted;
+        }
+        return GameState.Boosted;
     }
 
     private List<Finding> Candidates()
@@ -104,32 +185,39 @@ internal sealed partial class PerformanceProfile(Engine engine)
     {
         var changes = engine.Read<Changes>(Journal);
         if (changes is null) return;
-        var pending = new List<Finding>();
-        foreach (var item in changes.Lowered)
-        {
-            try
-            {
-                if (!BackgroundApps.IsRecognized(item.Executable)) continue;
-                using var process = InteractiveProcess.OpenVerified(item, requireWindow: false);
-                if (process?.PriorityClass == ProcessPriorityClass.BelowNormal)
-                    process.PriorityClass = ProcessPriorityClass.Normal;
-            }
-            catch (ArgumentException) { } // The original process exited.
-            catch (InvalidOperationException) { } // The process exited during verification.
-            catch (Exception ex) when (Unavailable(ex)) { pending.Add(item); }
-        }
+        var pending = RestorePriorities(changes.Lowered, ProcessPriorityClass.BelowNormal, BackgroundApps.IsRecognized);
+        var raised = RestorePriorities(changes.Raised ?? [], ProcessPriorityClass.AboveNormal, GameTarget.CanSelect);
         Guid? power = null;
         if (changes.OriginalPower is { } original)
         {
             var active = ReadPower();
             if (!active.HasValue || active == HighPerformance && !SetPower(original)) power = original;
         }
-        if (pending.Count > 0 || power.HasValue)
+        if (pending.Count > 0 || raised.Count > 0 || power.HasValue)
         {
-            engine.Save(Journal, new Changes(pending, power));
+            engine.Save(Journal, new Changes(pending, power, raised));
             throw new IOException("Часть настроек ещё не восстановлена. Закройте и снова откройте «Свидетель», чтобы повторить восстановление.");
         }
         File.Delete(Path.Combine(engine.DataDirectory, Journal));
+    }
+
+    private static List<Finding> RestorePriorities(IEnumerable<Finding> items, ProcessPriorityClass assigned, Func<string, bool> allowed)
+    {
+        var pending = new List<Finding>();
+        foreach (var item in items)
+        {
+            try
+            {
+                if (!allowed(item.Executable)) continue;
+                using var process = InteractiveProcess.OpenVerified(item, requireWindow: false);
+                if (process?.PriorityClass == assigned)
+                    process.PriorityClass = ProcessPriorityClass.Normal;
+            }
+            catch (ArgumentException) { } // The original process exited.
+            catch (InvalidOperationException) { } // The process exited during verification.
+            catch (Exception ex) when (Unavailable(ex)) { pending.Add(item); }
+        }
+        return pending;
     }
 
     private FileStream Acquire() => File.Open(Path.Combine(engine.DataDirectory, "performance-session.lock"),

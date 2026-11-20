@@ -1,6 +1,7 @@
 param(
     [switch]$SelfContained,
     [switch]$Installer,
+    [switch]$WithPresentMon,
     [string]$InstallerCompiler,
     [switch]$RequireSignature,
     [string]$SigningThumbprint,
@@ -90,6 +91,23 @@ try {
     dotnet publish Svidetel/Svidetel.csproj -c Release -r win-x64 --self-contained $standalone -o $payload
     if ($LASTEXITCODE) { throw 'Publish failed' }
     Sign-Application (Join-Path $payload 'Svidetel.exe')
+    if ($WithPresentMon) {
+        $source = Join-Path $artifactRoot 'tools/presentmon-2.6.0'
+        $null = New-Item -ItemType Directory -Path $source -Force
+        $collector = Join-Path $source 'PresentMon.exe'
+        $license = Join-Path $source 'LICENSE.txt'
+        $collectorHash = 'b2a706bc6ad475749e3b7e3409263aa1e6906d45bdcf993f6dbc0f660188f1af'
+        if (-not (Test-Path -LiteralPath $collector) -or (Get-FileHash -LiteralPath $collector).Hash -ne $collectorHash) {
+            Invoke-WebRequest 'https://github.com/GameTechDev/PresentMon/releases/download/v2.6.0/PresentMon-2.6.0-x64.exe' -OutFile $collector
+        }
+        if ((Get-FileHash -LiteralPath $collector).Hash -ne $collectorHash) { throw 'Unexpected PresentMon SHA-256.' }
+        if (-not (Test-Path -LiteralPath $license)) {
+            Invoke-WebRequest 'https://raw.githubusercontent.com/GameTechDev/PresentMon/v2.6.0/LICENSE.txt' -OutFile $license
+        }
+        $toolFolder = New-Item -ItemType Directory -Path (Join-Path $payload 'tools')
+        Copy-Item -LiteralPath $collector -Destination $toolFolder.FullName
+        Copy-Item -LiteralPath $license -Destination (Join-Path $toolFolder.FullName 'PresentMon-LICENSE.txt')
+    }
     Copy-Item README.md,LICENSE -Destination $payload
     $packageDocs = New-Item -ItemType Directory -Path (Join-Path $payload 'docs')
     Copy-Item -LiteralPath 'docs/screenshots' -Destination $packageDocs.FullName -Recurse

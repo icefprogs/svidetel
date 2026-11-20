@@ -65,13 +65,19 @@ public partial class MainWindow
         LoadDemo();
         Loaded += (_, _) =>
         {
+            PrepareExampleReport();
+            Sections.SelectedItem = HomeTab;
+            Capture((FrameworkElement)Content, "home.png");
+            Sections.SelectedItem = ScanTab;
             Findings.SelectedIndex = 0;
             Capture((FrameworkElement)Content, "overview.png");
             OptimizeClick(this, new RoutedEventArgs());
             ShowGameDemo();
             Sections.SelectedItem = GamerTab;
             Capture((FrameworkElement)Content, "gamer.png");
-            GamerButton.Content = "Режим геймера";
+            Sections.SelectedItem = ReviewTab;
+            Capture((FrameworkElement)Content, "review.png");
+            GamerButton.Content = "Начать сессию";
             ThemeChoice.SelectedIndex = 1;
             AccentMode.SelectedIndex = 1;
             Sections.SelectedItem = SettingsTab;
@@ -137,7 +143,7 @@ public partial class MainWindow
     {
         if (tray != null) return tray;
         var menu = new Forms.ContextMenuStrip();
-        void Open() => Dispatcher.Invoke(() => { WindowState = WindowState.Normal; Show(); Activate(); });
+        void Open() => Dispatcher.Invoke(OpenFromTray);
         menu.Items.Add("Открыть «Свидетель»", null, (_, _) => Open());
         var scan = menu.Items.Add("Сканировать ПК");
         scan.Click += async (_, _) =>
@@ -146,7 +152,7 @@ public partial class MainWindow
             await ScanSystem();
         };
         menu.Opening += (_, _) => scan.Enabled = !busy;
-        menu.Items.Add("Выйти", null, (_, _) => Dispatcher.Invoke(() => { if (!busy) Close(); }));
+        menu.Items.Add("Выйти", null, (_, _) => Dispatcher.Invoke(ExitApplication));
         using var stream = Application.GetResourceStream(new Uri("pack://application:,,,/Assets/Witness.ico")).Stream;
         using var source = new System.Drawing.Icon(stream);
         var icon = (System.Drawing.Icon)source.Clone();

@@ -37,3 +37,15 @@ Name: "{userdesktop}\Свидетель"; Filename: "{app}\Svidetel.exe"; Workin
 
 [Run]
 Filename: "{app}\Svidetel.exe"; WorkingDir: "{app}"; Description: "{cm:LaunchProgram,Свидетель}"; Flags: nowait postinstall skipifsilent
+
+[Code]
+procedure CurUninstallStepChanged(Step: TUninstallStep);
+var
+  RunKey, Command, Expected: String;
+begin
+  if Step <> usUninstall then Exit;
+  RunKey := 'Software\Microsoft\Windows\CurrentVersion\Run';
+  Expected := '"' + ExpandConstant('{app}\Svidetel.exe') + '" --tray';
+  if RegQueryStringValue(HKCU, RunKey, 'Svidetel.Tray', Command) and (CompareText(Command, Expected) = 0) then
+    RegDeleteValue(HKCU, RunKey, 'Svidetel.Tray');
+end;

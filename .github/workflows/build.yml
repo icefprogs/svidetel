@@ -14,7 +14,7 @@ jobs:
           dotnet-version: '10.0.x'
       - name: Build, test and package
         shell: pwsh
-        run: ./scripts/build.ps1 -Installer
+        run: ./scripts/build.ps1 -Installer -WithPresentMon
       - name: Isolated registry round-trip
         shell: pwsh
         run: ./tests/bin/Release/net10.0-windows/Svidetel.Tests.exe --integration

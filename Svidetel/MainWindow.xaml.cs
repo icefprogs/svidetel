@@ -29,10 +29,12 @@ public partial class MainWindow : Window
         Closed += (_, _) => watchTimer.Stop();
         if (Environment.GetCommandLineArgs().Contains("--demo")) LoadDemo();
         InitializePerformance();
+        InitializeMatchDashboard();
+        StartDefenderDashboard();
         PrepareDemoCapture();
     }
     async Task Watch() { if (busy || watching || demo || WatchEnabled.IsChecked != true) return; watching = true; try { var entries = engine.History().GroupBy(x => x.Item.Id).Select(x => x.First()).Where(x => x.Status == "disabled").ToArray(); if (entries.Length == 0) return; var result = await engine.Call<JsonElement>(new { op = "monitor", entries }); var returned = result.GetProperty("Returned").EnumerateArray().Select(x => x.GetString()).ToArray(); var text = string.Join("\n", returned); if (text.Length > 0 && text != lastAlert) { lastAlert = text; Status.Text = "Внимание: отключённые записи вернулись. " + text; NotifyReturn(text); } if (text.Length == 0) lastAlert = ""; var errors = result.GetProperty("Errors").GetArrayLength(); if (errors > 0) Status.Text = $"Наблюдение неполное: ошибок доступа {errors}."; } catch (Exception ex) { Status.Text = "Наблюдение: " + ex.Message; } finally { watching = false; } }
-    void SetBusy(bool value, string message) { busy = value; Toolbar.IsEnabled = !value; OptimizeButton.IsEnabled = !value; GamerButton.IsEnabled = !value; RestoreButton.IsEnabled = !value; Status.Text = message; UpdateActions(); }
+    void SetBusy(bool value, string message) { busy = value; Toolbar.IsEnabled = !value; OptimizeButton.IsEnabled = !value; GamerButton.IsEnabled = !value; SessionButton.IsEnabled = !value; RestoreButton.IsEnabled = !value; Status.Text = message; UpdateActions(); }
     void UpdateActions()
     {
         var item = Findings.SelectedItem as Finding;
@@ -45,7 +47,11 @@ public partial class MainWindow : Window
         InspectButton.Content = item?.Kind == "remnant" ? "Открыть папку" : "Подпись и SHA-256";
     }
     async Task Work(Func<Task> operation, string message) { if (busy) return; SetBusy(true, message); try { await operation(); } catch (OperationCanceledException) { Status.Text = "Проверка отменена."; } catch (Exception ex) { Status.Text = "Операция не завершена. См. сообщение и историю."; MessageBox.Show(this, ex.Message, "Свидетель", MessageBoxButton.OK, MessageBoxImage.Warning); } finally { SetBusy(false, Status.Text); RefreshHistory(); } }
-    async void ScanClick(object sender, RoutedEventArgs e) => await ScanSystem();
+    async void ScanClick(object sender, RoutedEventArgs e)
+    {
+        Sections.SelectedItem = ScanTab;
+        await ScanSystem();
+    }
     async Task<bool> ScanSystem()
     {
         var completed = false;
@@ -142,7 +148,21 @@ public partial class MainWindow : Window
     void DeveloperLink(object sender, System.Windows.Navigation.RequestNavigateEventArgs e) { Process.Start(new ProcessStartInfo(e.Uri.AbsoluteUri) { UseShellExecute = true }); e.Handled = true; }
     void AppsClick(object sender, RoutedEventArgs e) => Process.Start(new ProcessStartInfo("ms-settings:appsfeatures") { UseShellExecute = true });
     void ExportClick(object sender, RoutedEventArgs e) { if (MessageBox.Show(this, "Отчёт содержит имена пользователей, пути, команды и сетевые адреса. Не публикуйте его без проверки. Сохранить локально?", "Экспорт", MessageBoxButton.YesNo) != MessageBoxResult.Yes) return; var dlg = new SaveFileDialog { Filter = "JSON|*.json", FileName = "svidetel-report.json" }; if (dlg.ShowDialog() == true) { try { File.WriteAllText(dlg.FileName, JsonSerializer.Serialize(new { Created = DateTimeOffset.Now, Demo = demo, Items = items, Coverage = Coverage.Text }, Engine.Json)); Status.Text = "Отчёт сохранён локально."; } catch (Exception ex) { MessageBox.Show(ex.Message); } } }
-    void AdminClick(object sender, RoutedEventArgs e) { try { var path = Environment.ProcessPath ?? throw new IOException("Путь приложения недоступен."); if (Path.GetFileNameWithoutExtension(path).Equals("dotnet", StringComparison.OrdinalIgnoreCase)) throw new IOException("Для повышения прав запустите Svidetel.exe из папки сборки."); Process.Start(new ProcessStartInfo(path) { UseShellExecute = true, Verb = "runas" }); Close(); } catch (Exception ex) { Status.Text = "Повышение прав не выполнено: " + ex.Message; } }
+    void AdminClick(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var path = Environment.ProcessPath ?? throw new IOException("Путь приложения недоступен.");
+            if (Path.GetFileNameWithoutExtension(path).Equals("dotnet", StringComparison.OrdinalIgnoreCase))
+                throw new IOException("Для повышения прав запустите Svidetel.exe из папки сборки.");
+            var start = new ProcessStartInfo(path) { UseShellExecute = true, Verb = "runas" };
+            start.ArgumentList.Add("--wait-for");
+            start.ArgumentList.Add(Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            Process.Start(start);
+            ExitApplication();
+        }
+        catch (Exception ex) { Status.Text = "Повышение прав не выполнено: " + ex.Message; }
+    }
     void DemoClick(object sender, RoutedEventArgs e)
     {
         if (activeProfile != ProfileMode.Off) { Status.Text = "Завершите активный режим перед открытием демо."; return; }

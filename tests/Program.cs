@@ -1,12 +1,45 @@
+using System.Diagnostics;
+using System.Net;
 using System.Text.Json;
 using Svidetel;
 if (args.Contains("--fixture")) return;
+if (args.Contains("--game-fixture"))
+{
+    Console.WriteLine("READY");
+    await Console.In.ReadLineAsync();
+    return;
+}
 var checks = 0;
 void Check(bool value, string label) { if (!value) throw new Exception(label); Console.WriteLine("PASS " + label); checks++; }
-var root = Path.Combine(Path.GetTempPath(), "Svidetel-tests-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
+var root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Temp",
+    "Svidetel-tests-" + Guid.NewGuid().ToString("N"));
+Directory.CreateDirectory(root);
 try
 {
     var e = new Engine(root);
+    var frameCsv = new FrameCsv(41);
+    frameCsv.Parse("Application,ProcessID,SwapChainAddress,CPUStartQPC,FrameTime,GPUBusy");
+    Check(frameCsv.Parse("game.exe,41,0x11,123456,12.5,4.1") == new FrameLine("0x11", 12.5, 4.1, 123456) &&
+        frameCsv.Parse("other.exe,42,0x11,123456,12.5,4.1") is null, "PresentMon v2 parser separates processes and preserves missing metrics");
+    var match = new MatchRecorder(Path.Combine(root, "Fixture.exe"));
+    Check(match.Finish().Frames == 0 && match.Finish().Fps is null, "session without frame capture has empty FPS metrics");
+    Check(match.MarkFreeze() && !match.MarkFreeze(), "freeze hotkey coalesces repeated taps");
+    for (int i = 0; i < 99; i++) match.AddFrame(new("main", 10, 2));
+    match.AddFrame(new("main", 50, 10));
+    match.AddFrame(new("overlay", 1000, 20));
+    match.AddSample(67, 12);
+    var recap = match.Finish();
+    Check(recap.Frames == 100 && Math.Abs(recap.Fps!.Value - 1000 / 10.4) < .001 && recap.Low1 == 20 && recap.P99 == 10,
+        "session metrics use one swap chain and separately compute 1% low and P99");
+    Check(recap.Points is [{ FrameMs: 50, Cpu: 67, Ping: 12 }] && recap.Marks.Length == 1,
+        "freeze timeline aligns local CPU and ping with the dominant frame chain");
+    foreach (var app in new[] { "steam", "Discord", "WinDivert", "winws", "EasyAntiCheat_EOS" })
+        Check(!GameTarget.CanSelect(Path.Combine(root, app + ".exe")), $"{app} cannot be selected for a priority boost");
+    Check(GameTarget.CanSelect(Path.Combine(root, "DemoGame.exe")) && !GameTarget.CanSelect("DemoGame.exe"), "only an absolute local game executable can be selected");
+    Check(GameTarget.TryProbe("127.0.0.1", out var loopback) && loopback!.Equals(IPAddress.Loopback) &&
+        GameTarget.TryProbe(" ", out var none) && none is null &&
+        !GameTarget.TryProbe("https://example.com", out _) && !GameTarget.TryProbe("ff02::1", out _) &&
+        !GameTarget.TryProbe("::ffff:224.0.0.1", out _), "latency configuration accepts one unicast IP or the gateway default");
     var local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
     Check(BackgroundApps.IsRecognized(Path.Combine(local, @"Microsoft\OneDrive\OneDrive.exe")), "known OneDrive install root can be optimized");
     Check(!BackgroundApps.IsRecognized(Path.Combine(local, @"Microsoft\OneDriveBeta\OneDrive.exe")) &&
@@ -81,6 +114,57 @@ try
             registry.DeleteValue(name); await e.Restore(saved); Check((string?)registry.GetValue(name) == command, "recovery works after conflict removed");
         }
         finally { registry.DeleteValue(name, false); }
+    }
+    if (args.Contains("--game-integration"))
+    {
+        var exe = Path.Combine(root, "WitnessGameFixture.exe");
+        File.Copy(Environment.ProcessPath!, exe);
+        var assembly = typeof(GameTarget).Assembly.GetName().Name;
+        foreach (var extension in new[] { ".dll", ".deps.json", ".runtimeconfig.json" })
+            File.Copy(Path.Combine(AppContext.BaseDirectory, assembly + extension), Path.Combine(root, assembly + extension));
+        var start = new ProcessStartInfo(exe, "--game-fixture")
+        {
+            UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardInput = true, CreateNoWindow = true
+        };
+        var profile = new PerformanceProfile(e);
+        var progress = new Progress<PerformanceProfile.Progress>();
+        profile.Begin(false, false, false, progress);
+        try
+        {
+            Check(profile.ObserveGame(exe, true).State == PerformanceProfile.GameState.Waiting, "game profile waits until the selected game starts");
+            using var game = Process.Start(start)!;
+            try
+            {
+                if (await game.StandardOutput.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(8)) != "READY")
+                    throw new Exception("Game fixture did not start");
+                game.PriorityClass = ProcessPriorityClass.Normal;
+                var read = profile.ObserveGame(exe, true);
+                game.Refresh();
+                Check(read.State == PerformanceProfile.GameState.Boosted && read.Pid == game.Id && read.Memory > 0 &&
+                      game.PriorityClass == ProcessPriorityClass.AboveNormal, "late-start game PID is measured and raised to AboveNormal");
+                profile.End();
+                game.Refresh();
+                Check(game.PriorityClass == ProcessPriorityClass.Normal, "ending the session restores the game priority");
+                profile.Begin(false, false, false, progress);
+                profile.ObserveGame(exe, true);
+                game.PriorityClass = ProcessPriorityClass.BelowNormal;
+                profile.End();
+                game.Refresh();
+                Check(game.PriorityClass == ProcessPriorityClass.BelowNormal, "restoration preserves a priority set externally after the boost");
+            }
+            finally
+            {
+                await game.StandardInput.WriteLineAsync("QUIT");
+                await game.WaitForExitAsync();
+            }
+        }
+        finally { profile.End(); }
+        var ping = new GameTelemetry(IPAddress.Loopback);
+        using var pingTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(4));
+        var measured = await ping.Measure(pingTimeout.Token);
+        Check(measured.History.Length == 1 && measured.History[0].Latency.HasValue, "explicit IP path replies over real loopback");
+        var loopbackServer = await ServerProbe.Compare([("fixture", IPAddress.Loopback)], pingTimeout.Token);
+        Check(loopbackServer is [{ Replies: 4, Median: not null }], "server scoring uses four independent loopback replies");
     }
     Console.WriteLine($"{checks} checks passed");
 }
