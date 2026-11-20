@@ -10,8 +10,6 @@
 
 Разработчик — [@icefprogs](https://github.com/icefprogs). Лицензия MIT. [Все выпуски](https://github.com/icefprogs/svidetel/releases).
 
-![Обзор компьютера в деморежиме](docs/screenshots/overview.png)
-
 ![Выбор фоновых записей в окне оптимизации](docs/screenshots/optimization.png)
 
 ![Настройки оформления со светлой темой](docs/screenshots/settings.png)
