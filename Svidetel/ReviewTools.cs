@@ -27,13 +27,14 @@ public partial class MainWindow
             activeProfile != ProfileMode.Off || lastMatch is not { } before || !CanCompare(before)) return;
         if (!File.Exists(before.Game)) { Status.Text = "EXE из первого замера больше недоступен."; return; }
         SelectGameForSession(before.Game);
-        comparison = new(before);
-        TrySave(ComparisonFile, comparison);
-        LowerGameBackground.IsChecked = true;
-        await ToggleProfile(ProfileMode.Gamer);
+        await ToggleProfile(ProfileMode.Gamer, compareBackground: true);
         recordAfterOptimization = activeProfile == ProfileMode.Gamer;
         if (recordAfterOptimization)
+        {
+            comparison = new(before);
+            TrySave(ComparisonFile, comparison);
             FreezeStatus.Text = "Прогони ту же сцену. После завершения сессия сохранится как «После».";
+        }
     }
 
     private static string LongSession(MatchPoint[] points)
@@ -122,8 +123,7 @@ public partial class MainWindow
             Write(drawing, Stats(report), 30, 74, 17, Brushes.Gainsboro);
             var graph = new Rect(30, 121, 900, 204);
             drawing.DrawRectangle(new SolidColorBrush(Color.FromRgb(36, 38, 51)), null, graph);
-            int markIndex = MarksPicker.SelectedIndex;
-            var mark = markIndex >= 0 && markIndex < report.Marks.Length ? report.Marks[markIndex] : (double?)null;
+            var mark = (MarksPicker.SelectedItem as FreezeSelection)?.Second;
             var start = mark is { } time ? Math.Max(0, time - 8) : report.Points[0].Second;
             var end = Math.Max(start + 1, mark is { } center ? center + 8 : report.Points[^1].Second);
             var points = report.Points.Where(point => start <= point.Second && point.Second <= end).ToArray();

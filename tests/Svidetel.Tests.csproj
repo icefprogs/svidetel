@@ -6,4 +6,6 @@
  <ItemGroup><Compile Include="../Svidetel/GameTarget.cs" Link="GameTarget.cs"/><Compile Include="../Svidetel/PerformanceProfile.cs" Link="PerformanceProfile.cs"/><Compile Include="../Svidetel/InteractiveProcess.cs" Link="InteractiveProcess.cs"/></ItemGroup>
  <ItemGroup><Compile Include="../Svidetel/GameArchive.cs" Link="GameArchive.cs"/></ItemGroup>
  <ItemGroup><Compile Include="../Svidetel/SteamLibrary.cs" Link="SteamLibrary.cs"/></ItemGroup>
+ <ItemGroup><Compile Include="../Svidetel/NetworkRoutes.cs" Link="NetworkRoutes.cs"/></ItemGroup>
+ <ItemGroup><Compile Include="../Svidetel/PassiveNetworkWindow.cs" Link="PassiveNetworkWindow.cs"/></ItemGroup>
 </Project>

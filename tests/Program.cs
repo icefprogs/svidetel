@@ -60,6 +60,51 @@ try
     Check(SteamLibrary.LatestDownloadRate("[2026-11-22 12:59:59] Current download rate: 18.250 Mbps", steamClock) == 18.25 &&
         SteamLibrary.LatestDownloadRate("[2026-11-22 12:00:00] Current download rate: 18.250 Mbps", steamClock) is null,
         "Steam traffic display excludes stale download rate entries");
+    var tracked = SteamLibrary.ParseTrackedProcesses("""
+        [2026-11-22 12:51:00] AppID 123 adding PID 712 as a tracked process
+        [2026-11-22 12:52:00] AppID 123 no longer tracking PID 712, exit code 0
+        [2026-11-22 12:53:00] AppID 123 adding PID 714 as a tracked process
+        """);
+    Check(tracked is [{ AppId: 123, Pid: 714 }], "Steam tracking considers only processes still marked active");
+    Check(steamGame is not null && SteamLibrary.IsGameProcess(steamGame, Path.Combine(steamGame.Folder, "bin", "game.exe")) &&
+        SteamLibrary.IsGameProcess(steamGame, Path.Combine(steamGame.Folder, "bin", "CrashBandicoot.exe")) &&
+        !SteamLibrary.IsGameProcess(steamGame, Path.Combine(steamGame.Folder, "launcher.exe")) &&
+        !SteamLibrary.IsGameProcess(steamGame, Path.Combine(steamGame.Folder, "obs64.exe")) &&
+        !SteamLibrary.IsGameProcess(steamGame, Path.Combine(steamGame.Folder + "-other", "game.exe")),
+        "automatic Steam detection rejects launchers and executables outside the game's installation");
+    var networkWindow = new PassiveNetworkWindow();
+    DateTimeOffset observed = DateTimeOffset.Now;
+    for (int index = 0; index < 5; index++)
+    {
+        networkWindow.Add("wifi-a", observed.AddSeconds(index), new(15, null, 1, true, ReceiveKbps: 50, SendKbps: 20, RouterProbed: true));
+        networkWindow.Add("wifi-a", observed.AddSeconds(index), new(80, null, 2, true, ReceiveKbps: 1200, SendKbps: 2, RouterProbed: true));
+        networkWindow.Add("wifi-a", observed.AddSeconds(index), new(80, null, 2, true, ReceiveKbps: 150, SendKbps: 900, RouterProbed: true));
+    }
+    var cohorts = networkWindow.Cohorts();
+    Check(cohorts is ({ Length: 5 }, { Length: 5 }), "passive network comparison uses real idle and busy adapter samples");
+    networkWindow.Add("wifi-b", observed.AddSeconds(5), new(4, null, 1, true, ReceiveKbps: 2, SendKbps: 1, RouterProbed: true));
+    Check(networkWindow.Cohorts() is ({ Length: 1 }, { Length: 0 }), "network history is reset when the route changes");
+    Check(PassiveNetworkWindow.Evaluate([null, null, null, null], [10, 15, 12, 10]) == NetworkObservation.RouterSilent &&
+        PassiveNetworkWindow.Evaluate([1, 1, 2, 1], [null, null, null, null]) == NetworkObservation.WanSilent &&
+        PassiveNetworkWindow.Evaluate([1, 1, 2, 1], []) == NetworkObservation.Responding &&
+        PassiveNetworkWindow.Evaluate([1, 2], []) == NetworkObservation.Warming,
+        "network status distinguishes filtered ICMP, missing probes and insufficient samples");
+    Check(PassiveNetworkWindow.Results([new(null, null, null), new(null, null, null, RouterProbed: true)], router: true) is [null],
+        "loss totals ignore destinations for which probes were not sent");
+    if (args.Contains("--network-integration"))
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(8));
+        var automatic = new GameTelemetry(automaticInternet: true);
+        var live = await automatic.Measure(timeout.Token, refreshRoute: true);
+        Check(live.Connection is { Automatic: true, Target: not null } && live.History is [{ RemoteProbed: true }],
+            "Windows route enables an automatic external probe with no manual address");
+        var routerOnly = await new GameTelemetry().Measure(timeout.Token, refreshRoute: true);
+        Check(routerOnly.Connection is { Target: null } && routerOnly.History is [{ RemoteProbed: false }],
+            "disabling the external check uses router-only network telemetry");
+        var routerResult = !live.History[0].RouterProbed ? "not probed" : live.History[0].Router.HasValue ? "reply" : "no reply";
+        Console.WriteLine($"Live ICMP · router {routerResult}, " +
+            $"external {(live.History[0].Latency.HasValue ? "reply" : "no reply")}.");
+    }
     foreach (var app in new[] { "steam", "Discord", "WinDivert", "winws", "EasyAntiCheat_EOS" })
         Check(!GameTarget.CanSelect(Path.Combine(root, app + ".exe")), $"{app} cannot be selected for a priority boost");
     Check(GameTarget.CanSelect(Path.Combine(root, "DemoGame.exe")) && !GameTarget.CanSelect("DemoGame.exe"), "only an absolute local game executable can be selected");

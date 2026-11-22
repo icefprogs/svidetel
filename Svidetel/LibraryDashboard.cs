@@ -127,7 +127,13 @@ public partial class MainWindow
         if (demo || captureDemo || busy || launchingSteam || activeProfile != ProfileMode.Off || SteamGames.SelectedItem is not SteamGame game) return;
         if (!steamSlots.TryGetValue(game.Id, out var executable) || !GameTarget.CanSelect(executable) || !File.Exists(executable))
         {
-            SteamStatus.Text = "Сначала укажи доступный EXE игры.";
+            if (preferences.AutoSteam)
+            {
+                nextSteamImport = DateTimeOffset.MinValue;
+                if (OpenSteam($"steam://run/{game.Id}"))
+                    SteamStatus.Text = "Ожидаю подтверждение запуска от Steam. Запись начнётся автоматически.";
+            }
+            else SteamStatus.Text = "Включите автозапись в параметрах или выберите EXE игры.";
             return;
         }
         SelectGameForSession(executable);
@@ -147,7 +153,8 @@ public partial class MainWindow
     {
         SteamStatus.Text = "Измеряю соединение перед запуском…";
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(6));
-        try { steamNetworkBefore = await MeasureConnection(target, 4, timeout.Token); }
+        var checkAddress = target ?? (preferences.InternetProbe ? NetworkRoutes.Find()?.Reference : null);
+        try { steamNetworkBefore = await MeasureConnection(checkAddress, 4, timeout.Token); }
         catch (OperationCanceledException) { steamNetworkBefore = null; }
         steamNetworkCompared = false;
         steamSeenSamples = 0;
@@ -170,7 +177,6 @@ public partial class MainWindow
         }
         SteamStatus.Text = "Запущено через Steam. Клиент ставит фоновые загрузки на паузу, если разрешение загрузок во время игры выключено.";
         GamerSummary.Text += "\nSteam управляет паузой загрузок по своим настройкам. ICMP измеряется до шлюза и выбранного узла.";
-        if (target is null) SteamStatus.Text += " Для второго замера укажи IP своего узла в профиле.";
     }
 
     private bool OpenSteam(string uri)

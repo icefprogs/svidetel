@@ -22,10 +22,12 @@ public partial class MainWindow
     private int framePid;
     private bool hotkeyRegistered, checkingProfiles, editingProfile;
     private string? automaticGame, suppressAutomatic;
+    private SteamGame[] automaticSteamLibrary = [];
+    private DateTimeOffset nextSteamImport;
     private ServerReading? suggestedServer;
     private HwndSource? hotkeySource;
+    private sealed record FreezeSelection(double? Second, string Label);
 
-    private void OpenGameTabClick(object sender, RoutedEventArgs e) => Sections.SelectedItem = GamerTab;
     private void OpenReviewClick(object sender, RoutedEventArgs e)
     {
         if (useExample)
@@ -86,6 +88,7 @@ public partial class MainWindow
         hotkeyRegistered = RegisterHotKey(hwnd, FreezeHotkey, 0x4006, 0x77);
         overlayHotkeyRegistered = RegisterHotKey(hwnd, OverlayHotkey, 0x4006, 0x78);
         FreezeButton.IsEnabled = true;
+        FreezeButton.Visibility = Visibility.Visible;
         FreezeStatus.Text = hotkeyRegistered ? "Ctrl + Shift + F8 — отметить фриз" : "Горячая клавиша занята. Используй кнопку в окне.";
         UpdateHome();
     }
@@ -110,6 +113,7 @@ public partial class MainWindow
         matchingSteam = false;
         steamNetworkBefore = null;
         FreezeButton.IsEnabled = false;
+        FreezeButton.Visibility = Visibility.Collapsed;
         FreezeStatus.Text = "Запись завершена";
         useExample = false;
         lastMatch = recorder.Finish() with { Environment = sessionEnvironment, Applied = appliedChanges };
@@ -219,19 +223,35 @@ public partial class MainWindow
 
     private async Task CheckAutomaticProfile()
     {
-        if (checkingProfiles || busy || changingProfile || demo || !profiles.Any(p => p.Automatic)) return;
+        if (networkClosed || checkingProfiles || busy || changingProfile || launchingSteam || demo || activeProfile != ProfileMode.Off ||
+            !preferences.AutoSteam && !profiles.Any(p => p.Automatic)) return;
         checkingProfiles = true;
         try
         {
             if (suppressAutomatic is { } suppressed && !await Task.Run(() => IsGameRunning(suppressed))) suppressAutomatic = null;
-            if (activeProfile != ProfileMode.Off) return;
             var candidates = profiles.Where(p => p.Automatic && !SamePath(p.Executable, suppressAutomatic)).ToArray();
             var detected = await Task.Run(() => candidates.FirstOrDefault(p => IsGameRunning(p.Executable)));
-            if (detected is null || busy || changingProfile || activeProfile != ProfileMode.Off) return;
-            ApplyProfile(detected);
-            await ToggleProfile(ProfileMode.Gamer, automatic: true);
+            if (networkClosed || busy || changingProfile || activeProfile != ProfileMode.Off) return;
+            if (detected is not null)
+            {
+                ApplyProfile(detected);
+                await ToggleProfile(ProfileMode.Gamer, automatic: true);
+                return;
+            }
+            if (!preferences.AutoSteam) return;
+            if (DateTimeOffset.Now >= nextSteamImport)
+            {
+                nextSteamImport = DateTimeOffset.Now.AddSeconds(30);
+                automaticSteamLibrary = await Task.Run(SteamLibrary.Read);
+            }
+            var games = automaticSteamLibrary;
+            var discovered = await Task.Run(() => SteamLibrary.FindRunning(games));
+            if (networkClosed || discovered is null || SamePath(discovered.Executable, suppressAutomatic) || busy || changingProfile ||
+                !preferences.AutoSteam || activeProfile != ProfileMode.Off) return;
+            await ToggleProfile(ProfileMode.Gamer, automatic: true, discoveredGame: discovered);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or System.ComponentModel.Win32Exception)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or ArgumentException
+            or System.Security.SecurityException or System.ComponentModel.Win32Exception)
         { Status.Text = "Автопрофиль: " + ex.Message; }
         finally { checkingProfiles = false; }
     }
@@ -261,9 +281,11 @@ public partial class MainWindow
 
     private void UpdateHome()
     {
-        HomeGame.Text = GameTarget.CanSelect(preferences.GamePath) ? Path.GetFileNameWithoutExtension(preferences.GamePath) : "Выбери игру";
+        HomeGame.Text = recordingDiscoveredGame?.Game.Name ??
+            (HasSelectedGame ? Path.GetFileNameWithoutExtension(preferences.GamePath) : "Игровая сессия");
+        UpdateSessionControls();
         var recent = matchHistory.FirstOrDefault() ?? (useExample ? null : lastMatch);
-        HomeLatest.Text = recent is { } report ? $"{report.At:g} · {Stats(report)}" : "Пока нет завершённых сессий";
+        ShowHomeReport(recent);
     }
 
     private void PrepareExampleReport()
@@ -276,7 +298,7 @@ public partial class MainWindow
             [13], 12, [new(12, "Демо · запустилась фоновая синхронизация")]);
         if (useExample && !demo && !captureDemo) { ShowReport(); return; }
         UpdateHome();
-        HomeLatest.Text = $"{lastMatch.At:g} · {Stats(lastMatch)}";
+        ShowHomeReport(lastMatch, example: true);
         HomeGame.Text = "Field Notes · демо";
         DefenderTitle.Text = "Защита в реальном времени включена · демо";
         DefenderEvents.Text = "Здесь появятся обнаружения и действия Microsoft Defender.";
@@ -290,12 +312,16 @@ public partial class MainWindow
 
     private void ShowReport()
     {
+        ReviewReportContent.Visibility = lastMatch is null ? Visibility.Collapsed : Visibility.Visible;
         MatchStats.Text = lastMatch is { } report ? Stats(report) + (report.Applied is { } applied ? "\n" + applied : "")
-            : "Заверши игровую сессию для просмотра результата.";
-        MarksPicker.ItemsSource = lastMatch?.Marks.Select((x, i) => new { Index = i,
-            Label = $"{(lastMatch.AutomaticMarks?.Contains(x) == true ? "Авто" : "Отметка")} {i + 1} · {TimeSpan.FromSeconds(x):mm\\:ss}" }).ToArray();
-        MarksPicker.SelectedIndex = lastMatch?.Marks.Length > 0 ? 0 : -1;
+            : "Завершите игровую сессию, чтобы открыть отчёт.";
+        var marks = lastMatch?.Marks.Select((second, index) => new FreezeSelection(second,
+            $"{(lastMatch.AutomaticMarks?.Contains(second) == true ? "Авто" : "Вручную")} {index + 1} · {Elapsed(second)}")).ToArray() ?? [];
+        MarksPicker.Visibility = marks.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
+        MarksPicker.ItemsSource = marks.Length == 0 ? [] : marks.Prepend(new FreezeSelection(null, "Вся сессия")).ToArray();
+        MarksPicker.SelectedIndex = marks.Length > 0 ? 1 : -1;
         BeforeButton.IsEnabled = AfterButton.IsEnabled = !useExample && CanCompare(lastMatch);
+        CompareOptimizedButton.IsEnabled = !useExample && CanCompare(lastMatch) && activeProfile == ProfileMode.Off;
         var runs = useExample ? new RunComparison() : comparison;
         ComparisonText.Text = $"До · {(runs.Before is { } a ? Stats(a) : "нет замера")}\n" +
             $"После · {(runs.After is { } b ? Stats(b) : "нет замера")}";
@@ -331,15 +357,16 @@ public partial class MainWindow
             return;
         }
         double end = report.Points.LastOrDefault()?.Second ?? 1;
-        bool marked = MarksPicker.SelectedIndex >= 0 && MarksPicker.SelectedIndex < report.Marks.Length;
-        double mark = marked ? report.Marks[MarksPicker.SelectedIndex] : 0;
+        var selected = (MarksPicker.SelectedItem as FreezeSelection)?.Second;
+        bool marked = selected.HasValue;
+        double mark = selected.GetValueOrDefault();
         double start = marked ? Math.Max(0, mark - 8) : 0;
         end = marked ? Math.Max(start + 1, mark + 8) : Math.Max(1, end);
         var points = report.Points.Where(p => p.Second >= start && p.Second <= end).ToArray();
-        FrameTimeline.Data = Trace(points, p => p.FrameMs, 33);
-        GpuTimeline.Data = Trace(points, p => p.GpuMs, 33);
-        CpuTimeline.Data = Trace(points, p => p.Cpu, 100);
-        PingTimeline.Data = Trace(points, p => p.Ping, 100);
+        FrameTimeline.Data = Trace(points, p => p.FrameMs, start, end, 33);
+        GpuTimeline.Data = Trace(points, p => p.GpuMs, start, end, 33);
+        CpuTimeline.Data = Trace(points, p => p.Cpu, start, end, 100);
+        PingTimeline.Data = Trace(points, p => p.Ping, start, end, 100);
         var x = 700 * (mark - start) / (end - start);
         FreezeTimeline.Data = marked ? new LineGeometry(new(x, 4), new(x, 140)) : null;
         var timelineEvents = new GeometryGroup();
@@ -354,21 +381,9 @@ public partial class MainWindow
                 $" · CPU {Format(points.Max(p => p.Cpu))}% · ICMP {Format(points.Max(p => p.Ping))} мс";
         ShowMatchDiagnostics(report, points, start, end);
 
-        PathGeometry Trace(MatchPoint[] data, Func<MatchPoint, double?> get, double minimum)
-        {
-            var result = new PathGeometry();
-            var scale = Math.Max(minimum, data.Select(get).Max() ?? 0);
-            PathFigure? line = null;
-            foreach (var point in data)
-            {
-                if (get(point) is not { } value) { line = null; continue; }
-                var item = new Point(700 * (point.Second - start) / (end - start), 139 - 130 * value / scale);
-                if (line is null) { line = new PathFigure { StartPoint = item }; result.Figures.Add(line); }
-                line.Segments.Add(new LineSegment(item, true));
-            }
-            return result;
-        }
     }
+
+    private static string Elapsed(double seconds) => TimeSpan.FromSeconds(seconds).ToString(seconds >= 3600 ? @"h\:mm\:ss" : @"m\:ss");
 
     private async void CompareServersClick(object sender, RoutedEventArgs e)
     {
@@ -391,7 +406,7 @@ public partial class MainWindow
             suggestedServer = readings.FirstOrDefault(x => x.Replies >= 3);
             ServerResults.Text = string.Join("\n", readings.Select(x => $"{x.Label} · {x.Replies}/4 ответов" +
                 (x.Median.HasValue ? $" · медиана {x.Median} мс · максимум {x.Worst} мс" : " · ICMP без ответа")));
-            if (suggestedServer is { } best) ServerResults.Text += $"\n\nПервый по стабильности и задержке: {best.Label}. Выбери его регион в самой игре.";
+            if (suggestedServer is { } best) ServerResults.Text += $"\n\n{best.Label} · больше ответов и ниже медиана среди проверенных адресов.";
             UseServer.IsEnabled = suggestedServer is not null;
         }
         catch (Exception ex) { ServerResults.Text = "Проверка прервана: " + ex.Message; }

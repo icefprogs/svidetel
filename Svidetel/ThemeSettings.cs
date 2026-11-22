@@ -9,15 +9,16 @@ public partial class MainWindow
 {
     private sealed record Preferences(int Theme = 0, int Accent = 0, bool Compact = false, bool Tray = false, bool Watch = false,
         bool CloseApps = false, bool HighPerformance = false, string GamePath = "", string ProbeAddress = "", bool BoostGame = false,
-        bool LowerBackground = true, bool HideOnClose = true);
+        bool LowerBackground = false, bool HideOnClose = true, bool NetworkMonitor = true, bool InternetProbe = true,
+        bool NetworkAlerts = false, bool AutoSteam = true, int NetworkInterval = 0);
     private const string PreferenceFile = "preferences.json";
     private Preferences preferences = new();
     private bool settingsReady, lightTheme;
-    private static readonly string[] BrushNames = ["Canvas", "Panel", "Well", "Control", "SelectedRow", "Line", "Ink", "Muted", "OnAccent"];
-    private static readonly string[] DarkPalette = ["#191A21", "#23252F", "#1D1F29", "#323543", "#414063", "#424655", "#F0F1F8", "#B9BDC9", "#202232"];
-    private static readonly string[] LightPalette = ["#EDEFEA", "#FBFCF8", "#F2F5EF", "#E3E8DF", "#D9E4D7", "#CFD8CC", "#1E251E", "#4F5D50", "#FBFCF8"];
-    private static readonly string[] DarkAccents = ["#C5DBBE", "#C6D7FF", "#F6D196"];
-    private static readonly string[] LightAccents = ["#36563D", "#355890", "#73511F"];
+    private static readonly string[] BrushNames = ["Canvas", "Rail", "Panel", "Well", "Control", "SelectedRow", "Line", "Ink", "Muted", "OnAccent"];
+    private static readonly string[] DarkPalette = ["#202124", "#1B1D20", "#26282C", "#1D2023", "#2C3035", "#2B3239", "#373B42", "#F1F3F5", "#B1B8C1", "#11202C"];
+    private static readonly string[] LightPalette = ["#F3F5F8", "#E8EDF3", "#FFFFFF", "#F4F6F9", "#F8F9FB", "#DCEAF8", "#D2DAE4", "#1D2937", "#46576A", "#FFFFFF"];
+    private static readonly string[] DarkAccents = ["#80CAF9", "#ACD6B2", "#F0C385"];
+    private static readonly string[] LightAccents = ["#005E9C", "#2E653D", "#845000"];
 
     private void LoadSettings()
     {
@@ -33,6 +34,11 @@ public partial class MainWindow
         CloseToTray.IsChecked = preferences.HideOnClose;
         ReadStartup();
         WatchEnabled.IsChecked = preferences.Watch;
+        AutoSteamChoice.IsChecked = preferences.AutoSteam;
+        NetworkMonitorChoice.IsChecked = preferences.NetworkMonitor;
+        InternetProbeChoice.IsChecked = preferences.InternetProbe;
+        NetworkAlertsChoice.IsChecked = preferences.NetworkAlerts;
+        NetworkIntervalChoice.SelectedIndex = Math.Clamp(preferences.NetworkInterval, 0, 2);
         CloseBackgroundApps.IsChecked = preferences.CloseApps;
         PreferPower.IsChecked = preferences.HighPerformance;
         LowerGameBackground.IsChecked = preferences.LowerBackground;
@@ -54,12 +60,25 @@ public partial class MainWindow
     private void SettingsChanged(object sender, RoutedEventArgs e)
     {
         if (!settingsReady) return;
+        bool networkChanged = preferences.NetworkMonitor != (NetworkMonitorChoice.IsChecked == true)
+            || preferences.InternetProbe != (InternetProbeChoice.IsChecked == true)
+            || preferences.NetworkInterval != NetworkIntervalChoice.SelectedIndex;
         preferences = preferences with { Theme = ThemeChoice.SelectedIndex, Accent = AccentMode.SelectedIndex,
             Compact = CompactRows.IsChecked == true, Tray = MinimizeToTray.IsChecked == true, Watch = WatchEnabled.IsChecked == true,
             CloseApps = CloseBackgroundApps.IsChecked == true, HighPerformance = PreferPower.IsChecked == true,
-            LowerBackground = LowerGameBackground.IsChecked == true, HideOnClose = CloseToTray.IsChecked == true };
+            LowerBackground = LowerGameBackground.IsChecked == true, HideOnClose = CloseToTray.IsChecked == true,
+            NetworkMonitor = NetworkMonitorChoice.IsChecked == true, InternetProbe = InternetProbeChoice.IsChecked == true,
+            NetworkAlerts = NetworkAlertsChoice.IsChecked == true, AutoSteam = AutoSteamChoice.IsChecked == true,
+            NetworkInterval = NetworkIntervalChoice.SelectedIndex };
+        if (networkChanged) ResetAutomaticNetwork();
         ApplySettings();
+        UpdateSessionControls();
         SavePreferences();
+    }
+
+    private void GameTuneChanged(object sender, RoutedEventArgs e)
+    {
+        if (settingsReady) UpdateSessionControls();
     }
 
     private void SavePreferences()
@@ -91,13 +110,13 @@ public partial class MainWindow
         var palette = lightTheme ? LightPalette : DarkPalette;
         for (var i = 0; i < BrushNames.Length; i++) SetBrush(BrushNames[i], palette[i]);
         var accents = lightTheme ? LightAccents : DarkAccents;
-        SetBrush("Accent", accents[Math.Clamp(AccentMode.SelectedIndex, 0, accents.Length - 1)]);
-        SetBrush("Signal", lightTheme ? "#3F6453" : "#AACCB7");
-        SetBrush("GlassControl", lightTheme ? "#DCE5E0" : "#4A554F");
-        SetGlassBrush("SessionHero", "#635EAA", "#494878", 12);
-        SetGlassBrush("GlassFace", lightTheme ? "#EFFFFFFF" : "#383F4843", lightTheme ? "#9DF9FBF9" : "#161D2421", 90);
-        SetGlassBrush("GlassRim", lightTheme ? "#FFFDFEFF" : "#8FAAB9AF", lightTheme ? "#A7C8D1CA" : "#354A5650", 110);
-        SetGlassBrush("GlassReflection", lightTheme ? "#F5FFFFFF" : "#46C8D5CD", "#00FFFFFF", 110);
+        var accent = accents[Math.Clamp(AccentMode.SelectedIndex, 0, accents.Length - 1)];
+        SetBrush("Accent", accent);
+        SetBrush("Signal", accent);
+        SetBrush("GpuSignal", lightTheme ? "#765225" : "#DBB984");
+        SetBrush("CpuSignal", lightTheme ? "#52677E" : "#C0CBD7");
+        SetBrush("NetworkSignal", lightTheme ? "#2B6B5C" : "#9FCDBB");
+        SetBrush("EventSignal", lightTheme ? "#845000" : "#E7B87A");
         Findings.RowHeight = CompactRows.IsChecked == true ? 30 : 38;
         ApplyWindowTone(this);
     }
@@ -105,14 +124,6 @@ public partial class MainWindow
     private static void SetBrush(string name, string hex)
     {
         var brush = new SolidColorBrush((Color)ColorConverter.ConvertFromString(hex));
-        brush.Freeze();
-        Application.Current.Resources[name] = brush;
-    }
-
-    private static void SetGlassBrush(string name, string highlight, string shadow, double angle)
-    {
-        var brush = new LinearGradientBrush((Color)ColorConverter.ConvertFromString(highlight),
-            (Color)ColorConverter.ConvertFromString(shadow), angle);
         brush.Freeze();
         Application.Current.Resources[name] = brush;
     }
@@ -131,5 +142,18 @@ public partial class MainWindow
         menu.PlacementTarget = ToolsButton;
         menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
         menu.IsOpen = true;
+    }
+
+    private void LatestReleaseClick(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            using var browser = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
+                "https://github.com/icefprogs/svidetel/releases/latest") { UseShellExecute = true });
+        }
+        catch (System.ComponentModel.Win32Exception)
+        {
+            Status.Text = "Не удалось открыть GitHub. Проверьте браузер по умолчанию.";
+        }
     }
 }

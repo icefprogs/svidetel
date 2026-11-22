@@ -96,14 +96,12 @@ public partial class MainWindow
         quietAlerts.Clear();
     }
 
-    private void OpenWindowsHistoryClick(object sender, RoutedEventArgs e) => Sections.SelectedItem = HistoryTab;
-
     private void ShowWindowsHistory(IReadOnlyList<InventoryObservation> observations)
     {
         var recent = observations.Where(item => item.ObservedAt >= DateTimeOffset.Now.AddDays(-1)).Take(5).ToArray();
         WindowsHistory.Text = recent.Length > 0
-            ? string.Join("\n\n", recent.Select(item => $"{item.ObservedAt:g}\n{item.Changes}"))
-            : "За последние сутки изменения в успешных снимках не зафиксированы.";
+            ? $"Сравнений с изменениями за последние сутки · {recent.Length}{(recent.Length == 5 ? "+" : "")}"
+            : "За последние сутки изменений в сохранённых сравнениях нет.";
     }
 
     [DllImport("user32.dll")] private static extern nint GetForegroundWindow();

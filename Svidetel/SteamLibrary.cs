@@ -1,4 +1,6 @@
 using Microsoft.Win32;
+using System.ComponentModel;
+using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -10,8 +12,16 @@ internal sealed record SteamGame(uint Id, string Name, string Folder, bool Updat
     public override string ToString() => Name;
 }
 
+internal sealed record RunningSteamGame(SteamGame Game, string Executable);
+internal sealed record TrackedSteamProcess(uint AppId, int Pid, DateTime At);
+
 internal static partial class SteamLibrary
 {
+    private static readonly HashSet<string> SteamUtilities = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "obs32", "obs64", "wallpaper32", "wallpaper64", "vrmonitor", "vrserver", "SteamVR"
+    };
+
     internal static SteamGame[] Read()
     {
         var root = FindRoot();
@@ -73,14 +83,76 @@ internal static partial class SteamLibrary
     {
         try
         {
-            if (FindRoot() is not { } root) return null;
-            using var stream = new FileStream(Path.Combine(root, "logs", "content_log.txt"), FileMode.Open, FileAccess.Read,
-                FileShare.ReadWrite | FileShare.Delete);
-            stream.Seek(Math.Max(0, stream.Length - 32_768), SeekOrigin.Begin);
-            using var reader = new StreamReader(stream, Encoding.UTF8);
-            return LatestDownloadRate(reader.ReadToEnd(), DateTime.Now);
+            return ReadLogTail("content_log.txt", 32_768) is { } text ? LatestDownloadRate(text, DateTime.Now) : null;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException) { return null; }
+    }
+
+    internal static RunningSteamGame? FindRunning(SteamGame[] games)
+    {
+        if (games.Length == 0 || ReadLogTail("gameprocess_log.txt", 131_072) is not { } text) return null;
+        using var self = Process.GetCurrentProcess();
+        var session = self.SessionId;
+        foreach (var tracked in ParseTrackedProcesses(text))
+        {
+            if (games.FirstOrDefault(game => game.Id == tracked.AppId) is not { } game) continue;
+            try
+            {
+                using var process = Process.GetProcessById(tracked.Pid);
+                if (process.SessionId != session || process.MainWindowHandle == 0 ||
+                    (process.StartTime - tracked.At).Duration() > TimeSpan.FromSeconds(45)) continue;
+                var executable = process.MainModule?.FileName;
+                if (executable is not null && IsGameProcess(game, executable)) return new(game, executable);
+            }
+            catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or Win32Exception or NotSupportedException) { }
+        }
+        return null;
+    }
+
+    internal static bool IsGameProcess(SteamGame game, string executable)
+    {
+        if (!GameTarget.CanSelect(executable)) return false;
+        var name = Path.GetFileNameWithoutExtension(executable);
+        if (SteamUtilities.Contains(name) || name.EndsWith("Launcher", StringComparison.OrdinalIgnoreCase) ||
+            name.StartsWith("CrashReport", StringComparison.OrdinalIgnoreCase) ||
+            name.StartsWith("UnityCrashHandler", StringComparison.OrdinalIgnoreCase) ||
+            name.StartsWith("unins", StringComparison.OrdinalIgnoreCase)) return false;
+        var folder = Path.TrimEndingDirectorySeparator(Path.GetFullPath(game.Folder)) + Path.DirectorySeparatorChar;
+        return Path.GetFullPath(executable).StartsWith(folder, StringComparison.OrdinalIgnoreCase);
+    }
+
+    internal static TrackedSteamProcess[] ParseTrackedProcesses(string text)
+    {
+        Dictionary<(uint, int), TrackedSteamProcess> active = [];
+        foreach (Match entry in ProcessReading().Matches(text))
+        {
+            if (!uint.TryParse(entry.Groups[2].Value, out var id) || !int.TryParse(entry.Groups[4].Value, out var pid) ||
+                id == 0 || pid <= 0) continue;
+            if (entry.Groups[3].Value == "no longer tracking")
+            {
+                active.Remove((id, pid));
+                continue;
+            }
+            if (DateTime.TryParseExact(entry.Groups[1].Value, "yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture,
+                DateTimeStyles.None, out var at))
+                active[(id, pid)] = new(id, pid, at);
+        }
+        return active.Values.OrderByDescending(item => item.At).Take(24).ToArray();
+    }
+
+    private static string? ReadLogTail(string name, int maximum)
+    {
+        if (FindRoot() is not { } root) return null;
+        try
+        {
+            using var stream = new FileStream(Path.Combine(root, "logs", name), FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            stream.Seek(Math.Max(0, stream.Length - maximum), SeekOrigin.Begin);
+            using var reader = new StreamReader(stream, Encoding.UTF8);
+            var chars = new char[maximum];
+            int read = reader.ReadBlock(chars, 0, chars.Length);
+            return new string(chars, 0, read);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return null; }
     }
 
     internal static double? LatestDownloadRate(string tail, DateTime now)
@@ -110,4 +182,8 @@ internal static partial class SteamLibrary
     [GeneratedRegex("""^\[(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d)\]\s+Current download rate: ([0-9.]+) Mbps""",
         RegexOptions.Multiline | RegexOptions.NonBacktracking)]
     private static partial Regex DownloadReading();
+
+    [GeneratedRegex("""^\[(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d)\]\s+AppID (\d+) (adding|no longer tracking) PID (\d+)(?:[ ,\r\n]|$)""",
+        RegexOptions.Multiline | RegexOptions.NonBacktracking)]
+    private static partial Regex ProcessReading();
 }

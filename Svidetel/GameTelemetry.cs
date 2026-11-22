@@ -1,15 +1,14 @@
 using System.Net;
 using System.Net.NetworkInformation;
-using System.Net.Sockets;
 using System.Runtime.InteropServices;
 
 namespace Svidetel;
 
-internal sealed partial class GameTelemetry(IPAddress? configuredAddress = null)
+internal sealed partial class GameTelemetry(IPAddress? configuredAddress = null, bool automaticInternet = false)
 {
     internal sealed record Sample(long? Latency, int? Cpu, long? Router = null, bool RemoteProbed = false,
         string? Adapter = null, long? ReceiveKbps = null, long? SendKbps = null, bool RouterProbed = false);
-    internal sealed record Snapshot(string Source, bool IsMeasuringNetwork, Sample[] History)
+    internal sealed record Snapshot(string Source, bool IsMeasuringNetwork, Sample[] History, NetworkConnection? Connection = null)
     {
         internal long? Median
         {
@@ -36,35 +35,64 @@ internal sealed partial class GameTelemetry(IPAddress? configuredAddress = null)
 
     private readonly Queue<Sample> history = new();
     private (ulong Idle, ulong Total)? previousCpu;
-    private (IPAddress Address, NetworkInterface Adapter)? gateway;
+    private ActiveNetwork? route;
+    private IPAddress? automaticAddress;
     private (long Received, long Sent, long Tick)? previousTraffic;
     private int routeTurns;
+    private int missedReference;
+    private long lastBackupCheck;
 
-    internal async Task<Snapshot> Measure(CancellationToken token)
+    internal async Task<Snapshot> Measure(CancellationToken token, bool refreshRoute = false)
     {
-        if (routeTurns++ % 8 == 0)
+        if (routeTurns++ % 8 == 0 || refreshRoute)
         {
-            var current = DefaultGateway();
-            if (!Equals(current?.Address, gateway?.Address) || current?.Adapter.Id != gateway?.Adapter.Id)
+            var current = NetworkRoutes.Find(configuredAddress);
+            if (current?.Key != route?.Key)
             {
                 history.Clear();
                 previousTraffic = null;
+                automaticAddress = current?.Reference;
+                missedReference = 0;
+                lastBackupCheck = 0;
             }
-            gateway = current;
+            route = current;
         }
 
         var cpu = ReadCpu();
-        var traffic = ReadTraffic(gateway?.Adapter);
-        var routerTask = PingOnce(gateway?.Address, token);
-        var remoteTask = configuredAddress is null || Equals(configuredAddress, gateway?.Address)
-            ? routerTask : PingOnce(configuredAddress, token);
+        var traffic = ReadTraffic(route?.Adapter);
+        var automatic = configuredAddress is null && automaticInternet;
+        var target = configuredAddress ?? (automatic ? automaticAddress : null);
+        var router = route?.Router;
+        var routerTask = PingOnce(router, token);
+        var remoteTask = target is null || Equals(target, router) ? routerTask : PingOnce(target, token);
         await Task.WhenAll(routerTask, remoteTask);
-        history.Enqueue(new(await remoteTask, cpu, await routerTask, configuredAddress is not null,
-            gateway?.Adapter.Name, traffic?.Received, traffic?.Sent, gateway.HasValue));
+        var remote = await remoteTask;
+        if (automatic && target is not null && route is { } currentRoute)
+        {
+            missedReference = remote.HasValue ? 0 : missedReference + 1;
+            if (missedReference >= 3 && (lastBackupCheck == 0 ||
+                System.Diagnostics.Stopwatch.GetElapsedTime(lastBackupCheck) >= TimeSpan.FromMinutes(1)))
+            {
+                lastBackupCheck = System.Diagnostics.Stopwatch.GetTimestamp();
+                var backup = target.Equals(currentRoute.Reference) ? currentRoute.Alternate : currentRoute.Reference;
+                if (await PingOnce(backup, token) is { } available)
+                {
+                    history.Clear();
+                    automaticAddress = target = backup;
+                    remote = available;
+                    missedReference = 0;
+                }
+            }
+        }
+        history.Enqueue(new(remote, cpu, await routerTask, target is not null,
+            route?.Adapter.Name, traffic?.Received, traffic?.Sent, router is not null));
         if (history.Count > 24) history.Dequeue();
-        return new(configuredAddress is not null ? $"Указанный IP · {configuredAddress}"
-                : gateway is { } route ? $"{route.Adapter.Name} · {route.Address}" : "Шлюз IPv4 не найден",
-            configuredAddress is not null || gateway.HasValue, history.ToArray());
+        var connection = route is null ? null : new NetworkConnection($"{route.Key}|{target}", route.Adapter.Id,
+            route.Adapter.Name, route.Adapter.NetworkInterfaceType, route.Adapter.Speed, router, target, automatic,
+            route.Addresses, route.Dns, route.RouterAdapter);
+        return new(target is not null ? $"{(automatic ? "Контрольный узел" : "Указанный IP")} · {target}"
+                : router is not null ? $"{route!.Adapter.Name} · {router}" : "Шлюз не найден",
+            target is not null || router is not null, history.ToArray(), connection);
     }
 
     internal static async Task<long?> PingOnce(IPAddress? address, CancellationToken token)
@@ -106,34 +134,6 @@ internal sealed partial class GameTelemetry(IPAddress? configuredAddress = null)
         if (previous is not { } old || total <= old.Total || idle < old.Idle) return null;
         return (int)Math.Clamp(100.0 * (1.0 - (double)(idle - old.Idle) / (total - old.Total)), 0, 100);
     }
-
-    internal static (IPAddress Address, NetworkInterface Adapter)? DefaultGateway()
-    {
-        try
-        {
-            // This only queries the Windows IPv4 routing table. ICMP is sent to the gateway.
-            if (GetBestInterface(0x01010101, out var index) != 0) return null;
-            foreach (var adapter in NetworkInterface.GetAllNetworkInterfaces())
-            {
-                if (adapter.OperationalStatus != OperationalStatus.Up || !adapter.Supports(NetworkInterfaceComponent.IPv4))
-                    continue;
-                try
-                {
-                    var properties = adapter.GetIPProperties();
-                    if (properties.GetIPv4Properties()?.Index != index) continue;
-                    var gateway = properties.GatewayAddresses.Select(g => g.Address)
-                        .FirstOrDefault(ip => ip.AddressFamily == AddressFamily.InterNetwork && !ip.Equals(IPAddress.Any) && !IPAddress.IsLoopback(ip));
-                    if (gateway is not null) return (gateway, adapter);
-                }
-                catch (NetworkInformationException) { }
-            }
-        }
-        catch (NetworkInformationException) { }
-        return null;
-    }
-
-    [LibraryImport("iphlpapi.dll")]
-    private static partial uint GetBestInterface(uint destination, out uint index);
 
     [LibraryImport("kernel32.dll")]
     private static partial int GetSystemTimes(out ulong idle, out ulong kernel, out ulong user);

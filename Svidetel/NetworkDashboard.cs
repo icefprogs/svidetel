@@ -38,14 +38,15 @@ public partial class MainWindow
             NetworkLoadResult.Text = "Укажи один IPv4 или IPv6 в настройках сессии.";
             return;
         }
-        var route = GameTelemetry.DefaultGateway();
+        target ??= preferences.InternetProbe ? NetworkRoutes.Find()?.Reference : null;
+        var route = NetworkRoutes.Find(target);
         if (route is null && target is null)
         {
-            NetworkLoadResult.Text = "Шлюз IPv4 не найден. Укажи адрес узла.";
+            NetworkLoadResult.Text = "Windows не нашла активное подключение.";
             return;
         }
         var adapter = route?.Adapter.Id ?? "";
-        var routerAddress = route?.Address.ToString() ?? "";
+        var routerAddress = route?.Router?.ToString() ?? "";
         var targetAddress = target?.ToString() ?? "";
         if (underLoad && idleNetwork is { } baseline &&
             (baseline.Adapter != adapter || baseline.Router != routerAddress || baseline.Target != targetAddress))
@@ -54,6 +55,7 @@ public partial class MainWindow
             return;
         }
         measuringNetwork = true;
+        NetworkLoadButton.IsEnabled = false;
         NetworkLoadResult.Text = "Восемь параллельных замеров…";
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(12));
         try
@@ -73,12 +75,16 @@ public partial class MainWindow
             ShowNetworkRuns();
         }
         catch (OperationCanceledException) { NetworkLoadResult.Text = "Время проверки истекло."; }
-        finally { measuringNetwork = false; }
+        finally
+        {
+            measuringNetwork = false;
+            NetworkLoadButton.IsEnabled = idleNetwork is not null;
+        }
     }
 
     private static async Task<NetworkMeasurement?> MeasureConnection(IPAddress? target, int count, CancellationToken token)
     {
-        var before = GameTelemetry.DefaultGateway();
+        var before = NetworkRoutes.Find(target);
         if (before is null && target is null) return null;
         var telemetry = new GameTelemetry(target);
         var readings = new List<GameTelemetry.Sample>(count);
@@ -88,10 +94,10 @@ public partial class MainWindow
             readings.Add(shot.History[^1]);
             if (i < count - 1) await Task.Delay(320, token);
         }
-        var after = GameTelemetry.DefaultGateway();
-        if (before?.Adapter.Id != after?.Adapter.Id || !Equals(before?.Address, after?.Address)) return null;
-        return new(before?.Adapter.Id ?? "", before?.Address.ToString() ?? "", target?.ToString() ?? "",
-            before is null ? [] : readings.Select(s => s.Router).ToArray(),
+        var after = NetworkRoutes.Find(target);
+        if (before?.Key != after?.Key) return null;
+        return new(before?.Adapter.Id ?? "", before?.Router?.ToString() ?? "", target?.ToString() ?? "",
+            before?.Router is null ? [] : readings.Select(s => s.Router).ToArray(),
             target is null ? [] : readings.Select(s => s.Latency).ToArray(),
             readings.Max(s => s.ReceiveKbps), readings.Max(s => s.SendKbps));
     }
@@ -99,8 +105,9 @@ public partial class MainWindow
     private void ShowSteamNetworkComparison(GameTelemetry.Snapshot snapshot)
     {
         if (steamNetworkCompared || steamNetworkBefore is not { } before || ++steamSeenSamples < 4 || snapshot.History.Length < 4) return;
-        var currentRoute = GameTelemetry.DefaultGateway();
-        if ((currentRoute?.Adapter.Id ?? "") != before.Adapter || (currentRoute?.Address.ToString() ?? "") != before.Router)
+        var current = snapshot.Connection;
+        if ((current?.AdapterId ?? "") != before.Adapter || (current?.Router?.ToString() ?? "") != before.Router ||
+            (current?.Target?.ToString() ?? "") != before.Target)
         {
             steamNetworkCompared = true;
             match?.AddEvent("Сеть после запуска Steam сменилась, сравнение задержки пропущено");
@@ -122,21 +129,39 @@ public partial class MainWindow
         if (demo || captureDemo || idleNetwork is null || loadedNetwork is null) return;
         var label = NetworkLabel.Text.Trim();
         if (label.Length == 0) { NetworkLabel.Focus(); return; }
-        networkRuns.Insert(0, new(label, DateTimeOffset.Now, idleNetwork, loadedNetwork));
+        SaveNetworkRun(label, idleNetwork, loadedNetwork);
+        ShowNetworkRuns();
+    }
+
+    private void SaveNetworkRun(string label, NetworkMeasurement idle, NetworkMeasurement loaded)
+    {
+        networkRuns.Insert(0, new(label, DateTimeOffset.Now, idle, loaded));
         if (networkRuns.Count > 12) networkRuns.RemoveRange(12, networkRuns.Count - 12);
         TrySave(NetworkRunsFile, networkRuns);
-        ShowNetworkRuns();
+        ShowSavedNetworkRuns();
     }
 
     private void ShowNetworkRuns()
     {
-        var sections = new List<string>();
-        if (idleNetwork is { } idle) sections.Add("Простой · " + DescribeNetwork(idle));
-        if (loadedNetwork is { } loaded) sections.Add("При загрузке · " + DescribeNetwork(loaded));
-        if (networkRuns.Count > 0)
-            sections.Add("Сохранённые сравнения\n" + string.Join("\n\n", networkRuns.Select(run =>
-                $"{run.Label} · {run.At:g}\nПростой · {DescribeNetwork(run.Idle)}\nПри загрузке · {DescribeNetwork(run.Loaded)}")));
-        NetworkLoadResult.Text = string.Join("\n\n", sections);
+        NetworkLoadButton.IsEnabled = !measuringNetwork && idleNetwork is not null;
+        SaveNetworkPanel.Visibility = loadedNetwork is not null ? Visibility.Visible : Visibility.Collapsed;
+        NetworkResultsTable.Visibility = idleNetwork is null ? Visibility.Collapsed : Visibility.Visible;
+        NetworkRouterIdle.Text = DescribeReplies(idleNetwork?.RouterMs ?? []);
+        NetworkTargetIdle.Text = DescribeReplies(idleNetwork?.TargetMs ?? []);
+        NetworkRouterLoaded.Text = DescribeReplies(loadedNetwork?.RouterMs ?? []);
+        NetworkTargetLoaded.Text = DescribeReplies(loadedNetwork?.TargetMs ?? []);
+        NetworkTargetLabel.Text = idleNetwork is { Target.Length: > 0 } target ? target.Target : "Выбранный IP";
+        NetworkLoadResult.Text = loadedNetwork is { } loaded && idleNetwork is { } idle
+            ? $"Пиковый приём · {Format(idle.ReceiveKbps / 1000.0)} → {Format(loaded.ReceiveKbps / 1000.0)} Мбит/с"
+            : idleNetwork is not null ? "Замер в простое завершён." : "";
+        ShowSavedNetworkRuns();
+    }
+
+    private void ShowSavedNetworkRuns()
+    {
+        SavedNetworkRuns.Visibility = networkRuns.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        SavedNetworkText.Text = string.Join("\n\n", networkRuns.Select(run =>
+            $"{run.Label} · {run.At:g}\nПростой · {DescribeNetwork(run.Idle)}\nПри загрузке · {DescribeNetwork(run.Loaded)}"));
     }
 
     private static string DescribeNetwork(NetworkMeasurement measurement) =>
@@ -147,6 +172,6 @@ public partial class MainWindow
         if (samples.Length == 0) return "—";
         var replies = samples.OfType<long>().Order().ToArray();
         return replies.Length == 0 ? $"без ответа ({samples.Length}/{samples.Length})"
-            : $"{(replies[(replies.Length - 1) / 2] + replies[replies.Length / 2]) / 2} мс, пропуски {samples.Length - replies.Length}/{samples.Length}";
+            : $"{PassiveNetworkWindow.Median(replies):0.#} мс · пропуски {samples.Length - replies.Length}/{samples.Length}";
     }
 }

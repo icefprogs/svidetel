@@ -16,6 +16,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        InitializeNavigation();
         VersionLabel.Text = $"Версия {typeof(MainWindow).Assembly.GetName().Version?.ToString(3)}";
         Categories.ItemsSource = categories;
         Categories.SelectedIndex = 0;
@@ -30,12 +31,20 @@ public partial class MainWindow : Window
         if (Environment.GetCommandLineArgs().Contains("--demo")) LoadDemo();
         InitializePerformance();
         InitializeMatchDashboard();
+        StartAutomaticNetwork();
         AddQuickSearch();
         StartDefenderDashboard();
         PrepareDemoCapture();
     }
     async Task Watch() { if (busy || watching || demo || WatchEnabled.IsChecked != true) return; watching = true; try { var entries = engine.History().GroupBy(x => x.Item.Id).Select(x => x.First()).Where(x => x.Status == "disabled").ToArray(); if (entries.Length == 0) return; var result = await engine.Call<JsonElement>(new { op = "monitor", entries }); var returned = result.GetProperty("Returned").EnumerateArray().Select(x => x.GetString()).ToArray(); var text = string.Join("\n", returned); if (text.Length > 0 && text != lastAlert) { lastAlert = text; Status.Text = "Внимание: отключённые записи вернулись. " + text; NotifyReturn(text); } if (text.Length == 0) lastAlert = ""; var errors = result.GetProperty("Errors").GetArrayLength(); if (errors > 0) Status.Text = $"Наблюдение неполное: ошибок доступа {errors}."; } catch (Exception ex) { Status.Text = "Наблюдение: " + ex.Message; } finally { watching = false; } }
-    void SetBusy(bool value, string message) { busy = value; Toolbar.IsEnabled = !value; OptimizeButton.IsEnabled = !value; GamerButton.IsEnabled = !value; SessionButton.IsEnabled = !value; RestoreButton.IsEnabled = !value; Status.Text = message; UpdateActions(); }
+    void SetBusy(bool value, string message)
+    {
+        busy = value;
+        Toolbar.IsEnabled = OptimizeButton.IsEnabled = GamerButton.IsEnabled = SessionButton.IsEnabled = ScanButton.IsEnabled = !value;
+        RestoreButton.IsEnabled = !value && HistoryList.SelectedItem is JournalEntry { Status: not "restored" };
+        Status.Text = message;
+        UpdateActions();
+    }
     void UpdateActions()
     {
         var item = Findings.SelectedItem as Finding;
@@ -46,6 +55,15 @@ public partial class MainWindow : Window
         InspectButton.Visibility = canInspect ? Visibility.Visible : Visibility.Collapsed;
         DisableButton.IsEnabled = InspectButton.IsEnabled = !busy;
         InspectButton.Content = item?.Kind == "remnant" ? "Открыть папку" : "Подпись и SHA-256";
+    }
+    void FindingsSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (!e.WidthChanged || Findings.Columns.Count != 4) return;
+        var width = Math.Max(620, e.NewSize.Width - SystemParameters.VerticalScrollBarWidth);
+        Findings.Columns[0].Width = width * .28;
+        Findings.Columns[1].Width = width * .15;
+        Findings.Columns[2].Width = width * .20;
+        Findings.Columns[3].Width = width * .37;
     }
     async Task Work(Func<Task> operation, string message) { if (busy) return; SetBusy(true, message); try { await operation(); } catch (OperationCanceledException) { Status.Text = "Проверка отменена."; } catch (Exception ex) { Status.Text = "Операция не завершена. См. сообщение и историю."; MessageBox.Show(this, ex.Message, "Свидетель", MessageBoxButton.OK, MessageBoxImage.Warning); } finally { SetBusy(false, Status.Text); RefreshHistory(); } }
     async void ScanClick(object sender, RoutedEventArgs e)
@@ -88,7 +106,8 @@ public partial class MainWindow : Window
             ShowWindowsHistory(observations);
             engine.Save("inventory.json", result with { Launches = new([], [], []), Removals = [] });
             items = result.Items; demo = false; ApplyFilter();
-            Status.Text = $"Объектов: {items.Count} · пробелы в источниках: {accessErrors.Count}";
+            ScanSummary.Text = $"Объектов {items.Count:N0} · Ошибок источников {accessErrors.Count:N0} · {DateTime.Now:t}";
+            Status.Text = ScanSummary.Text;
             completed = true;
         }
         finally { CancelButton.Visibility = Visibility.Collapsed; scanCancel.Dispose(); scanCancel = null; }
@@ -144,6 +163,11 @@ public partial class MainWindow : Window
         }, "Проверяю файл…");
     }
     void RefreshHistory() { try { HistoryList.ItemsSource = engine.History(); } catch (Exception ex) { Status.Text = "Ошибка чтения журнала: " + ex.Message; } }
+    void HistorySelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (RestoreButton is not null)
+            RestoreButton.IsEnabled = !busy && HistoryList.SelectedItem is JournalEntry { Status: not "restored" };
+    }
     void HistoryClick(object sender, RoutedEventArgs e) => RefreshHistory();
     void CopyClick(object sender, RoutedEventArgs e) { try { Clipboard.SetText(Details.Text); } catch (Exception ex) { Status.Text = ex.Message; } }
     void CancelClick(object sender, RoutedEventArgs e) => scanCancel?.Cancel();

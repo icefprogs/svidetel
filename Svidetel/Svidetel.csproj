@@ -2,7 +2,7 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType><TargetFramework>net10.0-windows</TargetFramework>
     <UseWPF>true</UseWPF><UseWindowsForms>true</UseWindowsForms><AllowUnsafeBlocks>true</AllowUnsafeBlocks><Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings>
-    <Version>3.4.0</Version><ApplicationManifest>app.manifest</ApplicationManifest>
+    <Version>4.1.1</Version><ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets/Witness.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup><Using Remove="System.Windows.Forms" /><Using Remove="System.Drawing" /><None Update="Bridge.ps1" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" /></ItemGroup>

@@ -12,6 +12,8 @@ public partial class MainWindow
     private PerformanceProfile performance = null!;
     private CancellationTokenSource? gameMonitor;
     private bool changingProfile;
+    private RunningSteamGame? recordingDiscoveredGame;
+    private bool HasSelectedGame => GameTarget.CanSelect(preferences.GamePath) && File.Exists(preferences.GamePath);
 
     private void ChooseGameClick(object sender, RoutedEventArgs e)
     {
@@ -22,9 +24,7 @@ public partial class MainWindow
             GameProcessStatus.Text = "Этот файл нельзя выбрать. Укажите EXE игры на локальном диске.";
             return;
         }
-        preferences = preferences with { GamePath = picker.FileName, ProbeAddress = ProbeIp.Text.Trim() };
-        UpdateGameSelection();
-        SavePreferences();
+        SelectGameForSession(picker.FileName);
     }
 
     private void ClearGameClick(object sender, RoutedEventArgs e)
@@ -37,7 +37,7 @@ public partial class MainWindow
 
     private void UpdateGameSelection()
     {
-        bool selected = GameTarget.CanSelect(preferences.GamePath);
+        bool selected = HasSelectedGame;
         GameExecutableLabel.Text = selected ? Path.GetFileName(preferences.GamePath) : "Игра не выбрана";
         GameExecutableLabel.ToolTip = selected ? preferences.GamePath : null;
         ClearGameButton.IsEnabled = selected;
@@ -73,11 +73,32 @@ public partial class MainWindow
     private async void QuickOptimizeClick(object sender, RoutedEventArgs e) => await ToggleProfile(ProfileMode.Background);
     private async void GamerModeClick(object sender, RoutedEventArgs e)
     {
+        if (!demo && !captureDemo && activeProfile != ProfileMode.Gamer && !HasSelectedGame)
+        {
+            ChooseGameClick(sender, e);
+            return;
+        }
         if (automaticGame is not null) suppressAutomatic = automaticGame;
         await ToggleProfile(ProfileMode.Gamer);
     }
 
-    private async Task ToggleProfile(ProfileMode requested, bool automatic = false)
+    private void UpdateSessionControls()
+    {
+        bool recording = activeProfile == ProfileMode.Gamer;
+        GamerButton.Content = SessionButton.Content = recording ? "Завершить сессию"
+            : HasSelectedGame ? "Начать запись" : "Выбрать игру";
+        OptimizeButton.Header = activeProfile == ProfileMode.Background ? "Восстановить приоритет фона" : "Снизить приоритет фоновых приложений";
+        HomeSteamButton.Visibility = recording ? Visibility.Collapsed : Visibility.Visible;
+        bool tuning = BoostSelectedGame.IsChecked == true || LowerGameBackground.IsChecked == true ||
+            PreferPower.IsChecked == true || CloseBackgroundApps.IsChecked == true;
+        HomeSessionState.Text = recording
+            ? (recordingDiscoveredGame is null ? "Запись идёт" : "Автозапись Steam идёт") + " · Ctrl+Shift+F8 отмечает фриз"
+            : HasSelectedGame ? (tuning ? "Готово к записи · временные изменения включены" : "Готово к записи")
+            : preferences.AutoSteam ? "Запись начнётся при запуске обнаруженной игры Steam" : "Выберите EXE или игру из библиотеки Steam";
+    }
+
+    private async Task ToggleProfile(ProfileMode requested, bool automatic = false, bool compareBackground = false,
+        RunningSteamGame? discoveredGame = null)
     {
         if (requested == ProfileMode.Gamer && !automatic) Sections.SelectedItem = GamerTab;
         if (demo)
@@ -87,10 +108,19 @@ public partial class MainWindow
             return;
         }
         if (busy || changingProfile) return;
-        IPAddress? probe = null;
-        if (requested == ProfileMode.Gamer && activeProfile != requested && !GameTarget.TryProbe(ProbeIp.Text, out probe))
+        var executable = discoveredGame?.Executable ?? preferences.GamePath;
+        if (requested == ProfileMode.Gamer && activeProfile != ProfileMode.Gamer &&
+            (!GameTarget.CanSelect(executable) || !File.Exists(executable)))
         {
-            GamerSource.Text = "Введи IPv4 или IPv6. Оставь поле пустым для замера до роутера.";
+            Status.Text = "Выберите доступный EXE игры.";
+            return;
+        }
+        IPAddress? probe = null;
+        if (requested == ProfileMode.Gamer && activeProfile != requested && discoveredGame is null &&
+            !GameTarget.TryProbe(ProbeIp.Text, out probe))
+        {
+            GamerSource.Text = "Укажите корректный IPv4 или IPv6 либо оставьте поле пустым для автовыбора.";
+            GameConfig.IsExpanded = true;
             ProbeIp.Focus();
             return;
         }
@@ -110,6 +140,7 @@ public partial class MainWindow
                     StopMatch();
                     activeProfile = ProfileMode.Off;
                     automaticGame = null;
+                    recordingDiscoveredGame = null;
                     await Task.Run(performance.End);
                     Status.Text = "Сессия завершена";
                     GamerSummary.Text = "Игровая сессия завершена. На экране остались последние измерения.";
@@ -117,9 +148,11 @@ public partial class MainWindow
                 if (previous == requested) return;
 
                 bool gaming = requested == ProfileMode.Gamer;
-                bool close = gaming && CloseBackgroundApps.IsChecked == true;
-                bool power = gaming && PreferPower.IsChecked == true;
-                bool lower = !gaming || LowerGameBackground.IsChecked == true;
+                bool profileChanges = gaming && !compareBackground && discoveredGame is null;
+                bool close = profileChanges && CloseBackgroundApps.IsChecked == true;
+                bool power = profileChanges && PreferPower.IsChecked == true;
+                bool lower = !gaming || compareBackground || (profileChanges && LowerGameBackground.IsChecked == true);
+                bool boost = profileChanges && BoostSelectedGame.IsChecked == true;
                 var progress = new Progress<PerformanceProfile.Progress>(step =>
                 {
                     if (!changingProfile) return;
@@ -129,10 +162,12 @@ public partial class MainWindow
                     ProfileProgressText.Text = $"{step.Done + 1} из {step.Total} · {step.Name}";
                 });
                 var result = await Task.Run(() => performance.Begin(lower, close, power, progress));
-                if (!gaming && result.Lowered == 0)
+                if ((!gaming || compareBackground) && result.Lowered == 0)
                 {
                     await Task.Run(performance.End);
-                    Status.Text = "Подходящих фоновых процессов сейчас нет";
+                    Status.Text = result.Skipped > 0 ? $"Приоритет не изменился · Недоступных процессов {result.Skipped}"
+                        : "Подходящих фоновых процессов сейчас нет";
+                    if (compareBackground) Sections.SelectedItem = ReviewTab;
                     return;
                 }
                 activeProfile = requested;
@@ -151,17 +186,27 @@ public partial class MainWindow
                 Status.Text = (gaming ? "Игровая сессия активна" : "Фоновая оптимизация активна") + $" · Изменён приоритет: {result.Lowered}";
                 if (!gaming) return;
                 GamerSummary.Text = summary + "\n\nSteam, Discord, игры и WinDivert остаются активными.";
-                GamerNetworkTitle.Text = probe is null ? "Задержка до роутера" : "Задержка до указанного IP";
+                GamerNetworkTitle.Text = "Задержка соединения";
                 GamerSource.Text = "Начинаю измерения…";
-                preferences = preferences with { ProbeAddress = ProbeIp.Text.Trim(), BoostGame = BoostSelectedGame.IsChecked == true };
-                SavePreferences();
-                automaticGame = automatic ? preferences.GamePath : null;
-                StartMatch(preferences.GamePath);
+                if (discoveredGame is null)
+                {
+                    preferences = preferences with { ProbeAddress = ProbeIp.Text.Trim(), BoostGame = BoostSelectedGame.IsChecked == true };
+                    SavePreferences();
+                }
+                automaticGame = automatic ? executable : null;
+                recordingDiscoveredGame = discoveredGame;
+                if (discoveredGame is not null)
+                {
+                    GameExecutableLabel.Text = discoveredGame.Game.Name;
+                    GameExecutableLabel.ToolTip = executable;
+                    GamerSummary.Text = "Автозапись Steam · только измерения";
+                }
+                StartMatch(executable);
+                if (discoveredGame is not null) match?.AddEvent($"Steam подтвердил запуск · {discoveredGame.Game.Name}");
                 appliedChanges = summary;
-                var executable = preferences.GamePath;
                 var config = configCopies.FirstOrDefault(copy => SamePath(copy.Game, executable))?.Path;
                 sessionEnvironment = await Task.Run(() => SessionDiagnostics.EnvironmentFor(executable, config));
-                _ = MeasureGame(probe, preferences.GamePath, preferences.BoostGame);
+                _ = MeasureGame(probe, executable, boost);
             }, "Применяю параметры фоновой нагрузки…");
         }
         finally
@@ -169,9 +214,9 @@ public partial class MainWindow
             changingProfile = false;
             GameConfig.IsEnabled = activeProfile != ProfileMode.Gamer;
             ProfileProgress.Visibility = Visibility.Collapsed;
-            OptimizeButton.Content = activeProfile == ProfileMode.Background ? "Отменить" : "Оптимизация";
-            GamerButton.Content = activeProfile == ProfileMode.Gamer ? "Завершить сессию" : "Начать сессию";
-            SessionButton.Content = activeProfile == ProfileMode.Gamer ? "Завершить" : "Начать";
+            if (activeProfile == ProfileMode.Gamer) UpdateSessionControls();
+            else UpdateGameSelection();
+            CompareOptimizedButton.IsEnabled = !useExample && CanCompare(lastMatch) && activeProfile == ProfileMode.Off;
         }
     }
 
@@ -179,9 +224,11 @@ public partial class MainWindow
     {
         using var cancellation = new CancellationTokenSource();
         gameMonitor = cancellation;
-        var telemetry = new GameTelemetry(probe);
+        bool externalProbe = preferences.InternetProbe;
+        var telemetry = new GameTelemetry(probe, externalProbe);
         var diagnostics = new SessionDiagnostics();
         var hasGame = GameTarget.CanSelect(game);
+        var observedRoute = Volatile.Read(ref networkChange);
         var watchStarted = Stopwatch.GetTimestamp();
         int diagnosticTurn = 0, missingGame = 0;
         bool sawGame = false;
@@ -194,7 +241,15 @@ public partial class MainWindow
             using var clock = new PeriodicTimer(TimeSpan.FromMilliseconds(1500));
             do
             {
-                var connection = telemetry.Measure(cancellation.Token);
+                if (externalProbe != preferences.InternetProbe)
+                {
+                    externalProbe = preferences.InternetProbe;
+                    telemetry = new GameTelemetry(probe, externalProbe);
+                }
+                int epoch = Volatile.Read(ref networkChange);
+                var refresh = epoch != observedRoute;
+                observedRoute = epoch;
+                var connection = Task.Run(() => telemetry.Measure(cancellation.Token, refresh), cancellation.Token);
                 (ProcessLoad[] Top, string[] Started)? detail = null;
                 double? steamRate = null;
                 long? gameMemory = null;
@@ -224,7 +279,9 @@ public partial class MainWindow
                 }
                 var snapshot = await connection;
                 cancellation.Token.ThrowIfCancellationRequested();
-                ShowGameSnapshot(snapshot, probe is not null);
+                GamerNetworkTitle.Text = snapshot.Connection?.Target is not null ? "Задержка до контрольного узла" : "Задержка до роутера";
+                ShowGameSnapshot(snapshot, snapshot.Connection?.Target is not null || probe is not null);
+                ReadGameNetwork(snapshot);
                 if (snapshot.History.LastOrDefault() is { } sampleNow)
                 {
                     var power = SessionDiagnostics.OnBattery();

@@ -33,7 +33,7 @@ public partial class MainWindow
 
     private static void Capture(FrameworkElement content, string name)
     {
-        content.UpdateLayout();
+        content.Dispatcher.Invoke(content.UpdateLayout, System.Windows.Threading.DispatcherPriority.ContextIdle);
         const int inset = 24;
         var bitmap = new RenderTargetBitmap((int)Math.Ceiling(content.ActualWidth) + inset * 2,
             (int)Math.Ceiling(content.ActualHeight) + inset * 2, 96, 96, PixelFormats.Pbgra32);
@@ -68,6 +68,9 @@ public partial class MainWindow
             PrepareExampleReport();
             Sections.SelectedItem = HomeTab;
             Capture((FrameworkElement)Content, "home.png");
+            ToolsClick(ToolsButton, new RoutedEventArgs());
+            Capture(ToolsButton.ContextMenu, "tools-menu.png");
+            ToolsButton.ContextMenu.IsOpen = false;
             Sections.SelectedItem = ScanTab;
             Findings.SelectedIndex = 0;
             Capture((FrameworkElement)Content, "overview.png");
@@ -84,13 +87,25 @@ public partial class MainWindow
             SteamStatus.Text = "Демо · установленные игры появятся здесь после чтения библиотеки Steam.";
             Capture((FrameworkElement)Content, "games.png");
             Sections.SelectedItem = ServersTab;
-            NetworkLoadResult.Text = "Демо\nПростой · роутер 1 мс · узел 14 мс\nПри загрузке · роутер 2 мс · узел 71 мс";
+            AutomaticNetworkStatus.Text = "Контрольные адреса отвечают";
+            AutomaticNetworkDetail.Text = "Демонстрационные данные";
+            NetworkAdapterInfo.Text = "Wi-Fi · подключено · линк 866 Мбит/с";
+            AutomaticRouter.Text = "1 мс · пропуски 0/8";
+            AutomaticRouterAddress.Text = "192.0.2.1";
+            AutomaticInternet.Text = "14 мс · пропуски 0/8";
+            AutomaticInternetAddress.Text = "Контрольный узел · 192.0.2.10";
+            AutomaticTraffic.Text = "↓ 27,6  ↑ 0,4 Мбит/с";
+            AutoNetworkComparison.Text = "Простой · 14 мс, 0/8 пропусков\nТрафик · 71 мс, 1/8 пропусков\nРазница медиан · +57 мс";
+            NetworkTarget.Text = "192.0.2.10";
+            idleNetwork = new("Demo", "192.0.2.1", "192.0.2.10", [1, 1, 2, 1, 1, 0, 2, 1], [14, 15, 12, 14, 14, 16, 13, 14], 927, 220);
+            loadedNetwork = new("Demo", "192.0.2.1", "192.0.2.10", [1, 2, 2, 2, 1, 3, 2, 2], [55, 71, 88, 64, 71, 90, 72, null], 27_552, 455);
+            ShowNetworkRuns();
+            NetworkLabel.Text = "Домашняя сеть";
             Capture((FrameworkElement)Content, "network.png");
-            GamerButton.Content = "Начать сессию";
-            ThemeChoice.SelectedIndex = 1;
-            AccentMode.SelectedIndex = 1;
             Sections.SelectedItem = SettingsTab;
             Capture((FrameworkElement)Content, "settings.png");
+            ThemeChoice.SelectedIndex = 1;
+            Capture((FrameworkElement)Content, "settings-light.png");
             Close();
         };
     }

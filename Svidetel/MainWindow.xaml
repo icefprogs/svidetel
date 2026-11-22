@@ -1,17 +1,29 @@
 <Window x:Class="Svidetel.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Свидетель" Icon="Assets/Witness.ico" Width="1260" Height="880" MinWidth="980" MinHeight="700"
-        Background="{DynamicResource Canvas}" Foreground="{DynamicResource Ink}" FontSize="14" FontFamily="Segoe UI Variable Text, Segoe UI">
-  <Grid Margin="24">
+        Title="Свидетель" Icon="Assets/Witness.ico" Width="1220" Height="840" MinWidth="980" MinHeight="700"
+        Background="{DynamicResource Canvas}" Foreground="{DynamicResource Ink}" FontSize="14" FontFamily="Segoe UI Variable Text, Segoe UI"
+        UseLayoutRounding="True" SnapsToDevicePixels="True">
+  <Grid>
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/>
     </Grid.RowDefinitions>
-    <DockPanel Margin="0,0,0,20" LastChildFill="True">
+    <Border BorderBrush="{DynamicResource Line}" BorderThickness="0,0,0,1" Background="{DynamicResource Rail}">
+    <DockPanel Margin="16,8,16,8" LastChildFill="True">
       <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" x:Name="Toolbar">
-        <Button Content="Сканировать ПК" Click="ScanClick" Margin="0,0,8,0"/>
-        <Button Content="Инструменты ▾" Click="ToolsClick" Margin="0" x:Name="ToolsButton">
+        <Button Click="QuickSearchClick" AutomationProperties.Name="Быстрый поиск Ctrl+K" Margin="0,0,8,0">
+          <StackPanel Orientation="Horizontal">
+            <TextBlock Text="&#xE721;" Style="{StaticResource NavigationIcon}" Margin="0,0,8,0"/>
+            <TextBlock Text="Найти" VerticalAlignment="Center"/>
+            <TextBlock Text="Ctrl+K" Foreground="{DynamicResource Muted}" FontSize="12" Margin="12,0,0,0" VerticalAlignment="Center"/>
+          </StackPanel>
+        </Button>
+        <Button Click="ToolsClick" AutomationProperties.Name="Дополнительные инструменты" ToolTip="Дополнительные инструменты" Margin="0" x:Name="ToolsButton">
+          <TextBlock Text="&#xE712;" Style="{StaticResource NavigationIcon}"/>
           <Button.ContextMenu>
             <ContextMenu>
+              <MenuItem Header="Последний релиз на GitHub" Click="LatestReleaseClick"/>
+              <Separator/>
               <MenuItem Header="Управление автозапуском…" Click="OptimizeClick"/>
+              <MenuItem x:Name="OptimizeButton" Header="Снизить приоритет фоновых приложений" Click="QuickOptimizeClick"/>
               <MenuItem Header="Проверить папку…" Click="FolderClick"/>
               <MenuItem Header="Рост папок…" Click="FolderGrowthClick"/>
               <MenuItem Header="Обновить журнал запусков" Click="OriginsClick"/>
@@ -20,97 +32,148 @@
               <Separator/>
               <MenuItem Header="Установленные приложения Windows" Click="AppsClick"/>
               <MenuItem Header="Перезапустить от администратора" Click="AdminClick"/>
-              <MenuItem Header="Свернуть в трей" Click="TrayClick"/>
-              <Separator/>
-              <MenuItem Header="Посмотреть демо" Click="DemoClick"/>
+              <MenuItem Header="Пример проверки Windows" Click="DemoClick"/>
             </ContextMenu>
           </Button.ContextMenu>
         </Button>
       </StackPanel>
-      <StackPanel Orientation="Horizontal">
-        <Viewbox Width="36" Height="36" Margin="0,0,12,0" VerticalAlignment="Center">
-          <Grid Width="64" Height="64">
-            <Border CornerRadius="13" Background="#273029"/>
-            <Path Data="M 12,32 C 25,13 39,13 52,32 C 39,51 25,51 12,32 Z" Stroke="#C8DEC2" StrokeThickness="4"/>
-            <Ellipse Width="14" Height="14" Fill="#C8DEC2"/>
-          </Grid>
-        </Viewbox>
-        <StackPanel>
-          <TextBlock Text="Свидетель" FontSize="30" FontWeight="SemiBold"/>
-          <TextBlock Text="Игровые сессии и автозапуск Windows" Foreground="{DynamicResource Muted}" Margin="0,2,0,0"/>
-        </StackPanel>
+      <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+        <Image Width="24" Height="24" Source="Assets/Witness.ico" Margin="0,0,10,0"/>
+        <TextBlock Text="Свидетель" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center"/>
       </StackPanel>
     </DockPanel>
-    <Grid Grid.Row="1" x:Name="ProfileProgress" Visibility="Collapsed" Margin="4,0,4,8">
+    </Border>
+    <Grid Grid.Row="1" x:Name="ProfileProgress" Visibility="Collapsed" Margin="20,8,20,8">
       <Grid.ColumnDefinitions><ColumnDefinition Width="208"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
       <ProgressBar x:Name="ProfileProgressBar" Height="5" IsIndeterminate="True"
                    Foreground="{DynamicResource Signal}" Background="{DynamicResource Control}" BorderThickness="0"/>
       <TextBlock Grid.Column="1" x:Name="ProfileProgressText" Foreground="{DynamicResource Muted}" Margin="12,0,0,0"/>
     </Grid>
-    <Border Grid.Row="2" Background="{DynamicResource Panel}" CornerRadius="22" Padding="16" Margin="0,0,0,12">
-      <TabControl x:Name="Sections" TabStripPlacement="Left" Background="Transparent" BorderThickness="0">
-        <TabControl.ItemContainerStyle>
-          <Style TargetType="TabItem" BasedOn="{StaticResource {x:Type TabItem}}">
-            <Setter Property="Width" Value="176"/>
-            <Setter Property="Margin" Value="0,0,0,5"/>
-          </Style>
-        </TabControl.ItemContainerStyle>
-        <TabItem x:Name="HomeTab" Header="▦   Главная">
-          <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="20,8,4,4">
+    <Grid Grid.Row="2">
+      <Grid.ColumnDefinitions><ColumnDefinition Width="196"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+      <Border Background="{DynamicResource Rail}" BorderBrush="{DynamicResource Line}" BorderThickness="0,0,1,0" Padding="12,16">
+        <StackPanel>
+          <RadioButton x:Name="OverviewNav" GroupName="Workspace" Style="{StaticResource WorkspaceNavigation}" Click="NavigateClick" IsChecked="True">
+            <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE80F;" Style="{StaticResource NavigationIcon}"/><TextBlock Text="Обзор"/></StackPanel>
+          </RadioButton>
+          <RadioButton x:Name="GamesNav" GroupName="Workspace" Style="{StaticResource WorkspaceNavigation}" Click="NavigateClick">
+            <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE7FC;" Style="{StaticResource NavigationIcon}"/><TextBlock Text="Игры"/></StackPanel>
+          </RadioButton>
+          <RadioButton x:Name="NetworkNav" GroupName="Workspace" Style="{StaticResource WorkspaceNavigation}" Click="NavigateClick">
+            <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE968;" Style="{StaticResource NavigationIcon}"/><TextBlock Text="Сеть"/></StackPanel>
+          </RadioButton>
+          <RadioButton x:Name="WindowsNav" GroupName="Workspace" Style="{StaticResource WorkspaceNavigation}" Click="NavigateClick">
+            <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE83D;" Style="{StaticResource NavigationIcon}"/><TextBlock Text="Windows"/></StackPanel>
+          </RadioButton>
+          <Border BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0" Margin="8,12,8,12"/>
+          <RadioButton x:Name="SettingsNav" GroupName="Workspace" Style="{StaticResource WorkspaceNavigation}" Click="NavigateClick">
+            <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE713;" Style="{StaticResource NavigationIcon}"/><TextBlock Text="Параметры"/></StackPanel>
+          </RadioButton>
+        </StackPanel>
+      </Border>
+      <Grid Grid.Column="1">
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+        <Border x:Name="Subnavigation" Visibility="Collapsed" BorderBrush="{DynamicResource Line}" BorderThickness="0,0,0,1" Padding="24,0">
+          <ListBox x:Name="Subnav" Style="{StaticResource SectionNavigation}" ItemContainerStyle="{StaticResource SectionNavigationItem}"
+                   DisplayMemberPath="Label" SelectionChanged="SubnavChanged" AutomationProperties.Name="Страницы раздела"/>
+        </Border>
+        <TabControl Grid.Row="1" x:Name="Sections" SelectedIndex="0" SelectionChanged="PageChanged"
+                    KeyboardNavigation.TabNavigation="Local" Margin="24,20,16,12">
+          <TabControl.Template>
+            <ControlTemplate TargetType="TabControl">
+              <ContentPresenter x:Name="PART_SelectedContentHost" ContentSource="SelectedContent"/>
+            </ControlTemplate>
+          </TabControl.Template>
+        <TabItem x:Name="HomeTab" Header="Обзор">
+          <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,0,8,4">
             <StackPanel>
-              <TextBlock Text="Игровая сессия" FontSize="28" FontWeight="SemiBold" Margin="0,0,0,16"/>
-              <Border Background="{DynamicResource SessionHero}" CornerRadius="24" Padding="26" Margin="0,0,0,14">
+              <TextBlock Text="Обзор" Style="{StaticResource PageHeading}"/>
+              <Border Style="{StaticResource Surface}" Margin="0,0,0,20">
                 <Grid>
-                  <Grid.ColumnDefinitions><ColumnDefinition Width="2*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                  <StackPanel Margin="0,0,8,0">
-                    <TextBlock x:Name="HomeGame" Text="Выбери игру" Foreground="#FFFFFF" FontSize="27" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
-                    <TextBlock Text="Запиши игровую сессию и отметь рывок, чтобы разобрать его после матча."
-                               Foreground="#ECECFF" TextWrapping="Wrap" Margin="0,7,0,16"/>
-                    <WrapPanel>
-                      <Button x:Name="GamerButton" Content="Начать сессию" Click="GamerModeClick" MinHeight="44" Padding="16,8" Background="#1B1D2A" Foreground="#FFFFFF"/>
-                      <Button Content="Настроить игру" Click="OpenGameTabClick" MinHeight="44" Background="#454374" Foreground="#FFFFFF" Margin="7,0,0,0"/>
-                    </WrapPanel>
+                  <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                  <StackPanel Margin="0,0,16,0">
+                    <TextBlock x:Name="HomeGame" Text="Игра не выбрана" FontSize="22" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                    <TextBlock x:Name="HomeSessionState" Text="Выберите EXE или игру из библиотеки Steam" Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,4,0,0"/>
                   </StackPanel>
-                  <Viewbox Grid.Column="1" Margin="16" VerticalAlignment="Center" IsHitTestVisible="False">
-                    <Canvas Width="155" Height="82" Opacity=".8">
-                      <Path Data="M 1,62 L 38,62 L 53,54 L 66,33 L 80,62 L 136,62" Stroke="#EEEFFF" StrokeThickness="2"/>
-                      <Path Data="M 66,8 L 66,76" Stroke="#D4CEF8" StrokeDashArray="2,3"/>
-                      <Ellipse Canvas.Left="62" Canvas.Top="29" Width="8" Height="8" Fill="#FFFFFF"/>
-                    </Canvas>
-                  </Viewbox>
+                  <WrapPanel Grid.Column="1" VerticalAlignment="Center">
+                    <Button x:Name="HomeSteamButton" Content="Библиотека Steam" Click="OpenLibraryClick"/>
+                    <Button x:Name="GamerButton" Content="Выбрать игру" Click="GamerModeClick" Style="{StaticResource PrimaryButton}" Margin="0"/>
+                  </WrapPanel>
                 </Grid>
               </Border>
-              <Border Background="{DynamicResource Well}" CornerRadius="20" Padding="18" Margin="0,0,0,12">
+              <Grid Margin="0,0,0,8">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                 <StackPanel>
-                  <TextBlock Text="Последняя запись" FontSize="17" FontWeight="SemiBold"/>
-                  <TextBlock x:Name="HomeLatest" Text="Пока нет завершённых сессий" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,5,0,0"/>
-                  <WrapPanel Margin="0,12,0,0">
-                    <Button Content="Открыть разбор" Click="OpenReviewClick"/>
-                    <Button Content="Посмотреть пример" Click="ShowExampleClick" Margin="8,0,0,0"/>
-                  </WrapPanel>
+                  <TextBlock Text="Последняя сессия" Style="{StaticResource SectionHeading}"/>
+                  <TextBlock x:Name="HomeLatest" Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                </StackPanel>
+                <Button x:Name="HomeReviewButton" Grid.Column="1" Content="Открыть отчёт" Click="OpenLatestReportClick" Margin="8,0,0,0" VerticalAlignment="Center" Visibility="Collapsed"/>
+              </Grid>
+              <Border x:Name="HomeEmpty" Style="{StaticResource Surface}" Padding="20,24">
+                <StackPanel>
+                  <TextBlock Text="Пока нет измерений" FontSize="18" FontWeight="SemiBold"/>
+                  <TextBlock Text="После первой сессии здесь появятся записанные кадры и отметки фризов." Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,4,0,12"/>
+                  <Button Content="Посмотреть пример" Click="ShowExampleClick" HorizontalAlignment="Left" Margin="0"/>
                 </StackPanel>
               </Border>
-              <Border Background="{DynamicResource Well}" CornerRadius="20" Padding="18">
-                <DockPanel>
-                  <Button DockPanel.Dock="Right" x:Name="OptimizeButton" Content="Оптимизация" Click="QuickOptimizeClick" Margin="8,0,0,0"/>
-                  <StackPanel>
-                    <TextBlock Text="Фоновая нагрузка" FontSize="17" FontWeight="SemiBold"/>
-                    <TextBlock Text="Снизить приоритет известных фоновых приложений." Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,4,0,0"/>
-                  </StackPanel>
-                </DockPanel>
+              <Border x:Name="HomeReport" Style="{StaticResource Surface}" Visibility="Collapsed">
+                <StackPanel>
+                  <UniformGrid Columns="3" Rows="1" Margin="0,0,0,20">
+                    <StackPanel>
+                      <TextBlock Text="Средний FPS" Style="{StaticResource Caption}"/>
+                      <TextBlock x:Name="HomeFps" Style="{StaticResource Metric}"/>
+                    </StackPanel>
+                    <StackPanel>
+                      <TextBlock Text="1% low · FPS" Style="{StaticResource Caption}"/>
+                      <TextBlock x:Name="HomeLow" Style="{StaticResource Metric}"/>
+                    </StackPanel>
+                    <StackPanel>
+                      <TextBlock Text="Кадр P99 · мс" Style="{StaticResource Caption}"/>
+                      <TextBlock x:Name="HomeP99" Style="{StaticResource Metric}"/>
+                    </StackPanel>
+                  </UniformGrid>
+                  <Border BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0" Padding="0,16,0,0">
+                    <StackPanel>
+                      <TextBlock Text="Время кадра" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,12"/>
+                      <TextBlock x:Name="HomeFrameEmpty" Style="{StaticResource Caption}" TextWrapping="Wrap"/>
+                      <Grid x:Name="HomeChart" Height="196" Visibility="Collapsed">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                        <Grid Margin="0,0,12,0">
+                          <TextBlock x:Name="HomeScaleHigh" Style="{StaticResource Caption}" VerticalAlignment="Top"/>
+                          <TextBlock x:Name="HomeScaleMid" Style="{StaticResource Caption}" VerticalAlignment="Center"/>
+                          <TextBlock Text="0 мс" Style="{StaticResource Caption}" VerticalAlignment="Bottom"/>
+                        </Grid>
+                        <Viewbox Grid.Column="1" Stretch="Fill" Margin="0,5,0,6" IsHitTestVisible="False">
+                          <Canvas Width="700" Height="140" ClipToBounds="True">
+                            <Path Data="M 0,1 H 700 M 0,70 H 700 M 0,139 H 700" Stroke="{DynamicResource Line}" StrokeThickness="1"/>
+                            <Path x:Name="HomeFrameLine" Stroke="{DynamicResource Signal}" StrokeThickness="2" StrokeLineJoin="Round"/>
+                            <Path x:Name="HomeFreezeLines" Stroke="{DynamicResource EventSignal}" StrokeThickness="1" StrokeDashArray="2,3"/>
+                          </Canvas>
+                        </Viewbox>
+                        <DockPanel Grid.Row="1" Grid.Column="1" Margin="0,6,0,0">
+                          <TextBlock DockPanel.Dock="Right" x:Name="HomeTimeEnd" Style="{StaticResource Caption}"/>
+                          <TextBlock Text="0:00" Style="{StaticResource Caption}"/>
+                        </DockPanel>
+                      </Grid>
+                      <TextBlock x:Name="HomeFrameNote" Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                    </StackPanel>
+                  </Border>
+                </StackPanel>
               </Border>
             </StackPanel>
           </ScrollViewer>
         </TabItem>
-        <TabItem x:Name="GamerTab" Header="▷   Сессия">
-          <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="0,10,0,0">
-            <Grid Margin="4,4,4,8">
+        <TabItem x:Name="GamerTab" Header="Сессия">
+          <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,0,8,4">
+          <StackPanel>
+            <TextBlock Text="Игровая сессия" Style="{StaticResource PageHeading}"/>
+            <Grid>
               <Grid.ColumnDefinitions><ColumnDefinition Width="3*"/><ColumnDefinition Width="16"/><ColumnDefinition Width="2*"/></Grid.ColumnDefinitions>
               <StackPanel>
                 <TextBlock x:Name="GamerNetworkTitle" Text="Задержка до роутера" FontSize="21" FontWeight="SemiBold"/>
                 <TextBlock x:Name="GamerSource" Text="Измерения начнутся при включении режима" Foreground="{DynamicResource Muted}" Margin="0,4,0,12" TextWrapping="Wrap"/>
-                <Border Background="{DynamicResource Well}" BorderBrush="{DynamicResource Line}" BorderThickness="1"
-                        CornerRadius="16" Padding="12" Margin="0,0,0,12">
+                <Border Style="{StaticResource Surface}" Padding="12" Margin="0,0,0,12">
                   <Grid Height="114" ClipToBounds="True">
                     <Viewbox Stretch="Fill">
                       <Canvas Width="500" Height="106">
@@ -121,7 +184,7 @@
                       </Canvas>
                     </Viewbox>
                     <TextBlock x:Name="GraphScale" HorizontalAlignment="Right" Foreground="{DynamicResource Muted}"
-                               FontSize="11" Background="{DynamicResource Well}"/>
+                               VerticalAlignment="Top" FontSize="11" Background="{DynamicResource Panel}" Padding="3,0"/>
                   </Grid>
                 </Border>
                 <UniformGrid Rows="1">
@@ -130,9 +193,9 @@
                   <StackPanel><TextBlock x:Name="GamerMissing" Text="—" FontSize="24"/><TextBlock Text="Без ответа" Foreground="{DynamicResource Muted}"/></StackPanel>
                   <StackPanel><TextBlock x:Name="GamerCpu" Text="—" FontSize="24"/><TextBlock Text="CPU" Foreground="{DynamicResource Muted}"/></StackPanel>
                 </UniformGrid>
-                <TextBlock x:Name="GamerNote" Text="График показывает локальное соединение. Задержка на сервере игры может отличаться."
+                <TextBlock x:Name="GamerNote" Text="Записываются ICMP, CPU и доступные кадры PresentMon."
                            Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,16,0,0"/>
-                <Border Background="{DynamicResource Well}" CornerRadius="16" Padding="16" Margin="0,16,0,0">
+                <Border Style="{StaticResource Surface}" Margin="0,16,0,0">
                   <StackPanel>
                     <TextBlock Text="Процесс игры" FontSize="17" FontWeight="SemiBold"/>
                     <TextBlock x:Name="GameProcessStats" Text="CPU — · Память —" FontSize="22" Margin="0,4,0,0"/>
@@ -141,31 +204,27 @@
                   </StackPanel>
                 </Border>
               </StackPanel>
-              <Border Grid.Column="2" Background="{DynamicResource GlassFace}" BorderBrush="{DynamicResource GlassRim}"
-                      BorderThickness="1" CornerRadius="20" Padding="16" VerticalAlignment="Top">
+              <Border Grid.Column="2" Style="{StaticResource Surface}" VerticalAlignment="Top">
                 <StackPanel>
-                  <TextBlock Text="Действия режима" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,8"/>
-                  <WrapPanel Margin="0,0,0,7">
-                    <Button x:Name="FreezeButton" Content="Поймал фриз" Click="FreezeClick" IsEnabled="False"/>
-                    <Button x:Name="SessionButton" Content="Начать" Click="GamerModeClick" Margin="8,0,0,0"/>
+                  <TextBlock x:Name="GameExecutableLabel" Text="Игра не выбрана" FontSize="18" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" Margin="0,0,0,12"/>
+                  <WrapPanel Margin="0,0,0,8">
+                    <Button x:Name="SessionButton" Content="Выбрать игру" Click="GamerModeClick" Style="{StaticResource PrimaryButton}"/>
+                    <Button x:Name="FreezeButton" Content="Отметить фриз" Click="FreezeClick" IsEnabled="False" Visibility="Collapsed"/>
                   </WrapPanel>
                   <TextBlock x:Name="FreezeStatus" Text="Отметки доступны во время записи" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,0,0,5"/>
                   <TextBlock x:Name="FrameStatus" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,0,0,8"/>
                   <CheckBox x:Name="LiveOverlayChoice" Content="Оверлей FPS · Ctrl + Shift + F9" Checked="OverlayChanged" Unchecked="OverlayChanged" Margin="0,0,0,8"/>
-                  <TextBlock x:Name="GamerSummary" Text="Steam, Discord, игры и WinDivert остаются активными."
+                  <TextBlock x:Name="GamerSummary"
                              Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,0,0,12"/>
-                  <StackPanel x:Name="GameConfig" Margin="0,0,0,12">
-                    <TextBlock x:Name="GameExecutableLabel" Text="Игра не выбрана" TextTrimming="CharacterEllipsis" Margin="0,0,0,6"/>
+                  <Expander Header="Профиль и настройка замера" x:Name="GameConfig" Foreground="{DynamicResource Ink}">
+                    <StackPanel Margin="0,12,0,0">
                     <WrapPanel Margin="0,0,0,8">
                       <Button Content="Выбрать EXE игры" Click="ChooseGameClick" />
                       <Button x:Name="ClearGameButton" Content="Сбросить" Click="ClearGameClick" IsEnabled="False"/>
                     </WrapPanel>
-                    <CheckBox x:Name="BoostSelectedGame" Margin="0,0,0,10" IsEnabled="False">
-                      <TextBlock Text="Приоритет игры «Выше среднего»" TextWrapping="Wrap"/>
-                    </CheckBox>
                     <TextBlock Text="IP для проверки задержки" Foreground="{DynamicResource Muted}" Margin="0,0,0,4"/>
                     <TextBox x:Name="ProbeIp" MaxLength="64" AutomationProperties.Name="IP для проверки задержки"/>
-                    <TextBlock Text="Пустое поле — проверка до роутера" Foreground="{DynamicResource Muted}" Margin="0,4,0,0"/>
+                    <TextBlock Text="Пустое поле — автоматический выбор" Foreground="{DynamicResource Muted}" Margin="0,4,0,0"/>
                     <TextBlock Text="Профиль игры" Margin="0,10,0,4"/>
                     <ComboBox x:Name="ProfilePicker" SelectionChanged="ProfilePickerChanged">
                       <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Name}"/></DataTemplate></ComboBox.ItemTemplate>
@@ -175,7 +234,10 @@
                       <Button Content="Сохранить профиль" Click="SaveProfileClick"/>
                       <Button Content="Удалить профиль" Click="DeleteProfileClick" Margin="8,0,0,0"/>
                     </WrapPanel>
-                  </StackPanel>
+                    <TextBlock Text="Изменения на время замера" FontWeight="SemiBold" Margin="0,16,0,8"/>
+                    <CheckBox x:Name="BoostSelectedGame" Margin="0,0,0,8" IsEnabled="False" Checked="GameTuneChanged" Unchecked="GameTuneChanged">
+                      <TextBlock Text="Повышать приоритет выбранной игры" TextWrapping="Wrap"/>
+                    </CheckBox>
                   <CheckBox x:Name="LowerGameBackground" Content="Снижать приоритет фона"
                             Checked="SettingsChanged" Unchecked="SettingsChanged" Margin="0,0,0,8"/>
                   <CheckBox x:Name="CloseBackgroundApps"
@@ -188,30 +250,36 @@
                             ToolTip="Включается только если план уже доступен в Windows. После сессии возвращается исходный план.">
                     <TextBlock Text="План «Высокая производительность» от сети" TextWrapping="Wrap"/>
                   </CheckBox>
-                  <TextBlock Text="Настройки применяются при следующем включении режима." Foreground="{DynamicResource Muted}"
+                  <TextBlock Text="Приоритет и план питания восстанавливаются после сессии." Style="{StaticResource Caption}"
                              TextWrapping="Wrap" Margin="0,8,0,12"/>
                   <WrapPanel>
                     <Button Content="Игровой режим Windows" Click="WindowsGameSettingsClick" Margin="0,0,8,8"/>
                     <Button Content="Лимиты загрузок Windows" Click="WindowsDownloadSettingsClick" Margin="0,0,0,8"/>
                     <Button Content="Настройки графики Windows" Click="WindowsGraphicsSettingsClick" Margin="0,0,8,0"/>
                   </WrapPanel>
+                    </StackPanel>
+                  </Expander>
                 </StackPanel>
               </Border>
             </Grid>
+          </StackPanel>
           </ScrollViewer>
         </TabItem>
 
-        <TabItem x:Name="LibraryTab" Header="▤   Игры">
-          <ScrollViewer VerticalScrollBarVisibility="Auto">
-            <StackPanel Margin="22,4,20,20">
-              <TextBlock Text="Библиотека Steam" FontSize="25" FontWeight="SemiBold"/>
-              <TextBlock Text="Для замера кадров один раз укажи EXE игры." Foreground="{DynamicResource Muted}" Margin="0,8,0,12"/>
+        <TabItem x:Name="LibraryTab" Header="Библиотека Steam">
+          <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,0,8,4">
+            <StackPanel>
+              <TextBlock Text="Библиотека Steam" Style="{StaticResource PageHeading}"/>
+              <Border Style="{StaticResource Surface}">
+                <StackPanel>
+              <TextBlock Text="Запись стартует автоматически, когда Steam подтвердит запуск. EXE можно указать вручную." Style="{StaticResource Caption}"
+                         TextWrapping="Wrap" Margin="0,0,0,12"/>
               <DockPanel Margin="0,0,0,12">
                 <Button DockPanel.Dock="Right" Content="Обновить" Click="SteamRefreshClick" Margin="8,0,0,0"/>
                 <ComboBox x:Name="SteamGames" SelectionChanged="SteamGameChanged" AutomationProperties.Name="Установленные игры Steam"/>
               </DockPanel>
               <WrapPanel Margin="0,0,0,8">
-                <Button Content="Запустить через Steam" Click="LaunchSteamGameClick" Background="{DynamicResource Accent}" Foreground="{DynamicResource OnAccent}"/>
+                <Button Content="Начать запись и запустить" Click="LaunchSteamGameClick" Style="{StaticResource PrimaryButton}"/>
                 <Button Content="Выбрать EXE" Click="SelectSteamExecutableClick"/>
                 <Button Content="Проверить готовность" Click="PreflightClick"/>
               </WrapPanel>
@@ -223,6 +291,8 @@
                   <Button Content="Хранилище Windows" Click="StorageSettingsClick"/>
                 </WrapPanel>
               </Expander>
+                </StackPanel>
+              </Border>
               <TextBlock Text="История сессий" FontSize="20" FontWeight="SemiBold" Margin="0,20,0,8"/>
               <Grid MinHeight="90" MaxHeight="200">
                 <ListBox x:Name="GameHistoryList" DisplayMemberPath="Label" Background="{DynamicResource Well}"/>
@@ -245,96 +315,186 @@
                 <Button Content="Пометить как удачную" Click="MarkGoodMatchClick" Margin="8,0,0,0"/>
               </WrapPanel>
               <TextBlock x:Name="GoodMatchDiff" TextWrapping="Wrap" Margin="0,8,0,0"/>
-              <TextBlock Text="Настройки игры" FontSize="20" FontWeight="SemiBold" Margin="0,20,0,8"/>
+              <Expander Header="Копии конфигурации игры" Foreground="{DynamicResource Ink}" Margin="0,16,0,0">
+                <StackPanel Margin="0,8,0,0">
               <WrapPanel>
                 <Button Content="Сохранить копию конфига…" Click="SaveGameConfigClick"/>
                 <Button Content="Восстановить копию…" Click="RestoreGameConfigClick" Margin="8,0,0,0"/>
               </WrapPanel>
               <TextBlock x:Name="ConfigStatus" TextWrapping="Wrap" Foreground="{DynamicResource Muted}" Margin="0,8,0,0"/>
+                </StackPanel>
+              </Expander>
             </StackPanel>
           </ScrollViewer>
         </TabItem>
-        <TabItem x:Name="ReviewTab" Header="∿   Разбор фризов">
-          <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="20,8,6,4">
+        <TabItem x:Name="ReviewTab" Header="Разбор фризов">
+          <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,0,8,4">
             <StackPanel>
-              <TextBlock Text="Разбор фризов" FontSize="28" FontWeight="SemiBold" Margin="0,0,0,12"/>
+              <TextBlock Text="Разбор фризов" Style="{StaticResource PageHeading}"/>
               <TextBlock x:Name="MatchStats" TextWrapping="Wrap" Margin="0,0,0,10"/>
+              <StackPanel x:Name="ReviewReportContent" Visibility="Collapsed">
               <ComboBox x:Name="MarksPicker" SelectionChanged="MarksChanged"
                         AutomationProperties.Name="Отметки фризов" Width="210" HorizontalAlignment="Left" Margin="0,0,0,8">
                 <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Label}"/></DataTemplate></ComboBox.ItemTemplate>
               </ComboBox>
-              <Border Background="{DynamicResource Well}" CornerRadius="18" Padding="14">
+              <Border Style="{StaticResource Surface}">
                 <Grid Height="155" ClipToBounds="True">
                   <Viewbox Stretch="Fill">
                     <Canvas Width="700" Height="145">
                       <Path Data="M 0,15 L 700,15 M 0,54 L 700,54 M 0,97 L 700,97 M 0,140 L 700,140"
                             Stroke="{DynamicResource Line}" StrokeThickness="1"/>
-                      <Path x:Name="FrameTimeline" Stroke="#A7A2F5" StrokeThickness="2"/>
-                      <Path x:Name="GpuTimeline" Stroke="#D8A45E" StrokeThickness="2"/>
-                      <Path x:Name="CpuTimeline" Stroke="#94C7AE" StrokeThickness="2"/>
-                      <Path x:Name="PingTimeline" Stroke="#6CB3DD" StrokeThickness="2"/>
-                      <Path x:Name="EventTimeline" Stroke="#D8A45E" StrokeThickness="1" StrokeDashArray="1,3"/>
+                      <Path x:Name="FrameTimeline" Stroke="{DynamicResource Signal}" StrokeThickness="2"/>
+                      <Path x:Name="GpuTimeline" Stroke="{DynamicResource GpuSignal}" StrokeThickness="2"/>
+                      <Path x:Name="CpuTimeline" Stroke="{DynamicResource CpuSignal}" StrokeThickness="2"/>
+                      <Path x:Name="PingTimeline" Stroke="{DynamicResource NetworkSignal}" StrokeThickness="2"/>
+                      <Path x:Name="EventTimeline" Stroke="{DynamicResource EventSignal}" StrokeThickness="1" StrokeDashArray="1,3"/>
                       <Path x:Name="FreezeTimeline" Stroke="{DynamicResource Ink}" StrokeDashArray="2,3"/>
                     </Canvas>
                   </Viewbox>
                 </Grid>
               </Border>
               <WrapPanel Margin="0,10,0,7">
-                <TextBlock Text="Кадр" Foreground="#A7A2F5" Margin="0,0,16,0"/>
-                <TextBlock Text="GPU кадра" Foreground="#D8A45E" Margin="0,0,16,0"/>
-                <TextBlock Text="CPU системы" Foreground="#94C7AE" Margin="0,0,16,0"/>
-                <TextBlock Text="Пинг" Foreground="#6CB3DD"/>
+                <TextBlock Text="Кадр · мс" Foreground="{DynamicResource Signal}" Margin="0,0,16,0"/>
+                <TextBlock Text="GPU кадра · мс" Foreground="{DynamicResource GpuSignal}" Margin="0,0,16,0"/>
+                <TextBlock Text="CPU · %" Foreground="{DynamicResource CpuSignal}" Margin="0,0,16,0"/>
+                <TextBlock Text="ICMP · мс" Foreground="{DynamicResource NetworkSignal}"/>
               </WrapPanel>
+              <TextBlock Text="У линий разные шкалы. Ниже показаны значения в выбранном интервале."
+                         Style="{StaticResource Caption}" Margin="0,0,0,4"/>
               <TextBlock x:Name="MatchRange" Foreground="{DynamicResource Muted}" TextWrapping="Wrap"/>
-              <TextBlock x:Name="MatchDiagnostics" TextWrapping="Wrap" Margin="0,8,0,0"/>
-              <TextBlock x:Name="MatchWindowsEvents" TextWrapping="Wrap" Margin="0,8,0,0"/>
               <WrapPanel Margin="0,12,0,0">
                 <Button Content="Сохранить график PNG…" Click="ExportMatchImageClick"/>
                 <Button Content="Проверить вылет" Click="ReviewCrashClick" Margin="8,0,0,0"/>
               </WrapPanel>
+              <TextBlock x:Name="MatchWindowsEvents" TextWrapping="Wrap"/>
+              <Expander Header="Нагрузка и события в этом интервале" Margin="0,12,0,0">
+                <TextBlock x:Name="MatchDiagnostics" TextWrapping="Wrap" Margin="4,8,0,0" LineHeight="22"/>
+              </Expander>
               <TextBlock Text="Сравнение замеров" FontSize="20" FontWeight="SemiBold" Margin="0,20,0,6"/>
               <TextBlock Text="Повтори ту же сцену и настройки. Для каждого прогона нужно не менее 100 кадров." Foreground="{DynamicResource Muted}" TextWrapping="Wrap"/>
               <TextBlock x:Name="ComparisonText" TextWrapping="Wrap" Margin="0,8,0,12"/>
               <WrapPanel>
                 <Button x:Name="BeforeButton" Content="Сохранить как «До»" Click="SaveBeforeClick"/>
                 <Button x:Name="AfterButton" Content="Сохранить как «После»" Click="SaveAfterClick" Margin="8,0,0,0"/>
-                <Button Content="Оптимизировать и записать «После»" Click="OptimizeAndCompareClick" Margin="8,0,0,0"/>
+                <Button x:Name="CompareOptimizedButton" Content="Записать с пониженным приоритетом фона" Click="OptimizeAndCompareClick" Margin="8,0,0,0"/>
               </WrapPanel>
+              </StackPanel>
             </StackPanel>
           </ScrollViewer>
         </TabItem>
-        <TabItem x:Name="ServersTab" Header="⇄   Сеть">
-          <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="20,8,6,4">
+        <TabItem x:Name="ServersTab" Header="Сеть">
+          <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,0,8,4">
             <StackPanel>
-              <TextBlock Text="Сравнить серверы" FontSize="28" FontWeight="SemiBold" Margin="0,0,0,12"/>
-              <TextBlock Text="Укажи до восьми известных IP. На каждый адрес уйдут четыре ICMP-запроса." Foreground="{DynamicResource Muted}" TextWrapping="Wrap"/>
-              <TextBox x:Name="ServerList" Height="120" AcceptsReturn="True" MaxLength="1600" VerticalScrollBarVisibility="Auto"
-                       ToolTip="Одна строка — Название = IP" AutomationProperties.Name="Названия и адреса серверов" Margin="0,10,0,8"/>
-              <WrapPanel>
-                <Button x:Name="CompareServers" Content="Сравнить" Click="CompareServersClick"/>
-                <Button x:Name="UseServer" Content="Измерять по лучшему адресу" Click="UseServerClick" IsEnabled="False" Margin="8,0,0,0"/>
-              </WrapPanel>
-              <TextBlock x:Name="ServerResults" Text="Формат строки: Название = IP. Регион матчмейкинга выбирается в самой игре."
-                         Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,14,0,0"/>
-              <TextBlock Text="Задержка под нагрузкой" FontSize="20" FontWeight="SemiBold" Margin="0,20,0,8"/>
-              <TextBlock Text="Запусти обычную загрузку после первого замера. Оба замера используют один IP и шлюз." TextWrapping="Wrap" Foreground="{DynamicResource Muted}"/>
-              <WrapPanel Margin="0,8,0,0">
-                <Button Content="Замер в простое" Click="IdleNetworkClick"/>
-                <Button Content="Замер при загрузке" Click="LoadedNetworkClick" Margin="8,0,0,0"/>
-                <Button Content="Настройки Steam" Click="SteamDownloadSettingsClick" Margin="8,0,0,0"/>
-              </WrapPanel>
-              <TextBlock Text="Название сети или региона" Foreground="{DynamicResource Muted}" Margin="0,12,0,5"/>
-              <TextBox x:Name="NetworkLabel" MaxLength="80" AutomationProperties.Name="Название сети или региона"/>
-              <Button Content="Сохранить сравнение" Click="SaveNetworkRunClick" HorizontalAlignment="Left" Margin="0,8,0,0"/>
-              <TextBlock x:Name="NetworkLoadResult" TextWrapping="Wrap" Margin="0,8,0,0"/>
+              <TextBlock Text="Сеть" Style="{StaticResource PageHeading}"/>
+              <Border Style="{StaticResource Surface}" Margin="0,0,0,16">
+                <StackPanel>
+                  <TextBlock x:Name="AutomaticNetworkStatus" Text="Ожидаю первый замер" Style="{StaticResource SectionHeading}" TextWrapping="Wrap"/>
+                  <TextBlock x:Name="AutomaticNetworkDetail" Style="{StaticResource Caption}" Margin="0,4,0,0" TextWrapping="Wrap"/>
+                  <TextBlock x:Name="NetworkAdapterInfo" Text="—" Style="{StaticResource Caption}" Margin="0,4,0,0" TextWrapping="Wrap"/>
+                  <Border BorderThickness="0,1,0,0" BorderBrush="{DynamicResource Line}" Padding="0,16,0,0" Margin="0,16,0,0">
+                    <UniformGrid Rows="1" Columns="3">
+                      <StackPanel Margin="0,0,12,0">
+                        <TextBlock Text="Роутер" FontWeight="SemiBold"/>
+                        <TextBlock x:Name="AutomaticRouter" Text="—" Margin="0,6,0,0" TextWrapping="Wrap"/>
+                        <TextBlock x:Name="AutomaticRouterAddress" Style="{StaticResource Caption}" Margin="0,4,0,0" TextWrapping="Wrap"/>
+                      </StackPanel>
+                      <StackPanel Margin="0,0,12,0">
+                        <TextBlock Text="Контрольный узел" FontWeight="SemiBold"/>
+                        <TextBlock x:Name="AutomaticInternet" Text="—" Margin="0,6,0,0" TextWrapping="Wrap"/>
+                        <TextBlock x:Name="AutomaticInternetAddress" Style="{StaticResource Caption}" Margin="0,4,0,0" TextWrapping="Wrap"/>
+                      </StackPanel>
+                      <StackPanel>
+                        <TextBlock Text="Трафик адаптера" FontWeight="SemiBold"/>
+                        <TextBlock x:Name="AutomaticTraffic" Text="—" Margin="0,6,0,0" TextWrapping="Wrap"/>
+                      </StackPanel>
+                    </UniformGrid>
+                  </Border>
+                </StackPanel>
+              </Border>
+              <Border Style="{StaticResource Surface}" Margin="0,0,0,16">
+                <StackPanel>
+                  <TextBlock Text="Когда сеть загружена" Style="{StaticResource SectionHeading}"/>
+                  <TextBlock x:Name="AutoNetworkComparison" Text="По мере использования сети появится сравнение задержки в простое и при трафике."
+                             TextWrapping="Wrap" Margin="0,8,0,0"/>
+                </StackPanel>
+              </Border>
+              <Expander Header="Подключение и параметры Windows" Margin="0,0,0,8">
+                <StackPanel Margin="4,8,0,0">
+                  <TextBlock x:Name="NetworkIpInfo" Style="{StaticResource Caption}" TextWrapping="Wrap"/>
+                  <TextBlock x:Name="AutomaticDnsInfo" Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                  <WrapPanel Margin="0,12,0,0">
+                    <Button Content="Сеть Windows" Click="NetworkWindowsClick"/>
+                    <Button Content="Адаптеры" Click="NetworkAdaptersClick"/>
+                    <Button Content="Прокси" Click="NetworkProxyClick"/>
+                    <Button Content="VPN" Click="NetworkVpnClick"/>
+                  </WrapPanel>
+                </StackPanel>
+              </Expander>
+              <Expander Header="Ручной замер и свой IP" Margin="0,0,0,12">
+              <Border Style="{StaticResource Surface}" Margin="0,8,0,4">
+                <StackPanel>
+                  <TextBlock Text="Задержка и потери" Style="{StaticResource SectionHeading}"/>
+                  <TextBlock Text="Сравните ответы роутера и выбранного IP. Для второго замера запустите обычную загрузку." Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,4,0,12"/>
+                  <DockPanel Margin="0,0,0,12">
+                    <TextBlock DockPanel.Dock="Left" Text="IP для ICMP" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                    <TextBox x:Name="NetworkTarget" MaxLength="64" AutomationProperties.Name="Адрес для ICMP"
+                             Text="{Binding Text, ElementName=ProbeIp, UpdateSourceTrigger=PropertyChanged}" ToolTip="Если поле пустое, измеряется роутер"/>
+                  </DockPanel>
+                  <WrapPanel>
+                    <Button Content="Замер в простое" Click="IdleNetworkClick" Style="{StaticResource PrimaryButton}"/>
+                    <Button x:Name="NetworkLoadButton" Content="Замер при загрузке" Click="LoadedNetworkClick" IsEnabled="False"/>
+                  </WrapPanel>
+                  <TextBlock x:Name="NetworkLoadResult" Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,12,0,0"/>
+                  <Border x:Name="NetworkResultsTable" Visibility="Collapsed" BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0"
+                          Padding="0,12,0,0" Margin="0,12,0,0">
+                    <Grid>
+                      <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="2*"/><ColumnDefinition Width="2*"/></Grid.ColumnDefinitions>
+                      <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                      <TextBlock Text="Назначение" Style="{StaticResource Caption}"/>
+                      <TextBlock Grid.Column="1" Text="В простое" Style="{StaticResource Caption}"/>
+                      <TextBlock Grid.Column="2" Text="При загрузке" Style="{StaticResource Caption}"/>
+                      <TextBlock Grid.Row="1" Text="Роутер" FontWeight="SemiBold" Margin="0,8,8,0"/>
+                      <TextBlock Grid.Row="1" Grid.Column="1" x:Name="NetworkRouterIdle" TextWrapping="Wrap" Margin="0,8,8,0"/>
+                      <TextBlock Grid.Row="1" Grid.Column="2" x:Name="NetworkRouterLoaded" TextWrapping="Wrap" Margin="0,8,8,0"/>
+                      <TextBlock Grid.Row="2" x:Name="NetworkTargetLabel" Text="Выбранный IP" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
+                                 ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" Margin="0,8,8,0"/>
+                      <TextBlock Grid.Row="2" Grid.Column="1" x:Name="NetworkTargetIdle" TextWrapping="Wrap" Margin="0,8,8,0"/>
+                      <TextBlock Grid.Row="2" Grid.Column="2" x:Name="NetworkTargetLoaded" TextWrapping="Wrap" Margin="0,8,8,0"/>
+                    </Grid>
+                  </Border>
+                  <DockPanel x:Name="SaveNetworkPanel" Visibility="Collapsed" Margin="0,12,0,0">
+                    <Button DockPanel.Dock="Right" Content="Сохранить сравнение" Click="SaveNetworkRunClick" Margin="8,0,0,0"/>
+                    <TextBox x:Name="NetworkLabel" MaxLength="80" AutomationProperties.Name="Название сети или региона"
+                             ToolTip="Название сети или региона"/>
+                  </DockPanel>
+                </StackPanel>
+              </Border>
+              </Expander>
+              <Expander x:Name="SavedNetworkRuns" Header="Сохранённые сравнения" Visibility="Collapsed" Margin="0,0,0,12">
+                <TextBlock x:Name="SavedNetworkText" TextWrapping="Wrap" Margin="4,8,0,0"/>
+              </Expander>
+              <Expander Header="Сравнить несколько адресов" Foreground="{DynamicResource Ink}">
+                <StackPanel Margin="0,12,0,0">
+                  <TextBlock Text="До восьми адресов, по четыре ICMP-запроса на каждый. Укажите по одному «Название = IP» на строку."
+                             Style="{StaticResource Caption}" TextWrapping="Wrap"/>
+                  <TextBox x:Name="ServerList" Height="100" AcceptsReturn="True" MaxLength="1600" VerticalScrollBarVisibility="Auto"
+                           AutomationProperties.Name="Названия и адреса серверов" Margin="0,8"/>
+                  <WrapPanel>
+                    <Button x:Name="CompareServers" Content="Сравнить адреса" Click="CompareServersClick"/>
+                    <Button x:Name="UseServer" Content="Использовать адрес в замерах" Click="UseServerClick" IsEnabled="False"/>
+                  </WrapPanel>
+                  <TextBlock x:Name="ServerResults" Text="Регион матча выбирается в самой игре."
+                             Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                </StackPanel>
+              </Expander>
             </StackPanel>
           </ScrollViewer>
         </TabItem>
-        <TabItem x:Name="DefenderTab" Header="◇   Защита">
-          <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="20,8,6,4">
+        <TabItem x:Name="DefenderTab" Header="Защита">
+          <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,0,8,4">
             <StackPanel>
-              <TextBlock Text="Защита Windows" FontSize="28" FontWeight="SemiBold" Margin="0,0,0,12"/>
-              <Border Background="{DynamicResource Well}" CornerRadius="20" Padding="18">
+              <TextBlock Text="Защита Windows" Style="{StaticResource PageHeading}"/>
+              <Border Style="{StaticResource Surface}">
                 <StackPanel>
                   <TextBlock x:Name="DefenderTitle" Text="Получаю статус Microsoft Defender…" FontSize="20" FontWeight="SemiBold" TextWrapping="Wrap"/>
                   <TextBlock Text="Проверку в реальном времени и блокировку угроз выполняет Microsoft Defender." Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,5,0,12"/>
@@ -348,27 +508,25 @@
               <TextBlock Text="Журнал обнаружений и действий" FontSize="19" Margin="0,16,0,6"/>
               <TextBlock x:Name="DefenderEvents" TextWrapping="Wrap"/>
               <TextBlock x:Name="DefenderError" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,8,0,0"/>
-              <TextBlock Text="Новые процессы с момента запуска «Свидетеля»" FontSize="19" TextWrapping="Wrap" Margin="0,16,0,6"/>
-              <TextBlock x:Name="RecentProcesses" Text="Наблюдение началось." Foreground="{DynamicResource Muted}" TextWrapping="Wrap"/>
-              <TextBlock Text="История снимков Windows" FontSize="19" Margin="0,16,0,6"/>
-              <TextBlock x:Name="WindowsHistory" Text="Сделай два сканирования, чтобы увидеть изменения." TextWrapping="Wrap"/>
-              <WrapPanel Margin="0,8,0,0">
-                <Button Content="Сканирование и подписи" Click="ScanClick"/>
-                <Button Content="Открыть восстановление" Click="OpenWindowsHistoryClick" Margin="8,0,0,0"/>
-              </WrapPanel>
+              <Expander Header="Наблюдение за новыми процессами" Foreground="{DynamicResource Ink}" Margin="0,20,0,0">
+                <TextBlock x:Name="RecentProcesses" Text="После запуска ещё нет новых записей." Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+              </Expander>
             </StackPanel>
           </ScrollViewer>
         </TabItem>
-        <TabItem x:Name="ScanTab" Header="⌕   Сканирование">
-          <Grid Margin="0,12,0,0">
-            <Grid.ColumnDefinitions><ColumnDefinition Width="169"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-            <DockPanel Margin="0,0,12,0" LastChildFill="True">
-              <TextBlock DockPanel.Dock="Top" Text="Источники" Margin="8,4,0,8" Foreground="{DynamicResource Muted}"/>
-              <ListBox x:Name="Categories" SelectionChanged="FilterChanged" BorderThickness="0" Background="{DynamicResource Well}"/>
-            </DockPanel>
-            <Grid Grid.Column="1">
-              <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="3*"/><RowDefinition Height="2*"/></Grid.RowDefinitions>
-              <DockPanel Margin="0,0,0,8" LastChildFill="True">
+        <TabItem x:Name="ScanTab" Header="Сканирование">
+            <Grid Margin="0,0,8,0">
+              <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="3*"/><RowDefinition Height="2*"/></Grid.RowDefinitions>
+              <DockPanel Margin="0,0,0,16">
+                <Button x:Name="ScanButton" DockPanel.Dock="Right" Content="Сканировать ПК" Click="ScanClick" Style="{StaticResource PrimaryButton}" VerticalAlignment="Center" Margin="12,0,0,0"/>
+                <StackPanel>
+                  <TextBlock Text="Сканирование Windows" Style="{StaticResource PageHeading}" Margin="0"/>
+                  <TextBlock x:Name="ScanSummary" Text="Проверка автозапуска, служб и других источников" Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                </StackPanel>
+              </DockPanel>
+              <DockPanel Grid.Row="1" Margin="0,0,0,8" LastChildFill="True">
+                <ComboBox DockPanel.Dock="Left" x:Name="Categories" SelectionChanged="FilterChanged" Width="150" Margin="0,0,8,0"
+                          AutomationProperties.Name="Источник запуска"/>
                 <CheckBox x:Name="ReviewOnly" DockPanel.Dock="Right" Content="Требуют проверки" Checked="ReviewFilterChanged"
                           Unchecked="ReviewFilterChanged" VerticalAlignment="Center" Margin="12,0,0,0"
                           ToolTip="Только отсутствующие EXE и папки после подтверждённого удаления"/>
@@ -382,20 +540,21 @@
                   </TextBlock>
                 </Grid>
               </DockPanel>
-              <Border Grid.Row="1" CornerRadius="14" Background="{DynamicResource Well}" Padding="6">
-                <DataGrid x:Name="Findings" SelectionChanged="SelectionChanged" AutoGenerateColumns="False" IsReadOnly="True"
+              <Border Grid.Row="2" Style="{StaticResource Surface}" Padding="4">
+                <DataGrid x:Name="Findings" SelectionChanged="SelectionChanged" SizeChanged="FindingsSizeChanged" AutoGenerateColumns="False" IsReadOnly="True"
                           SelectionMode="Single" Background="{DynamicResource Well}" Foreground="{DynamicResource Ink}"
                           RowHeaderWidth="0" RowHeight="38" RowBackground="{DynamicResource Well}" AlternatingRowBackground="{DynamicResource Panel}"
-                          GridLinesVisibility="None" BorderThickness="0" EnableRowVirtualization="True" CanUserAddRows="False">
+                          GridLinesVisibility="None" BorderThickness="0" EnableRowVirtualization="True" CanUserAddRows="False"
+                          HorizontalScrollBarVisibility="Disabled" CanUserResizeColumns="False">
                   <DataGrid.Columns>
-                    <DataGridTextColumn Header="Название" Binding="{Binding Name}" Width="2*"/>
-                    <DataGridTextColumn Header="Источник" Binding="{Binding Category}" Width="104"/>
-                    <DataGridTextColumn Header="Состояние" Binding="{Binding State}" Width="160"/>
-                    <DataGridTextColumn Header="Действие" Binding="{Binding Recommendation}" Width="2*"/>
+                    <DataGridTextColumn Header="Название" Binding="{Binding Name}" ElementStyle="{StaticResource FindingText}" MinWidth="145"/>
+                    <DataGridTextColumn Header="Источник" Binding="{Binding Category}" ElementStyle="{StaticResource FindingText}" MinWidth="88"/>
+                    <DataGridTextColumn Header="Состояние" Binding="{Binding State}" ElementStyle="{StaticResource FindingText}" MinWidth="112"/>
+                    <DataGridTextColumn Header="Рекомендация" Binding="{Binding Recommendation}" ElementStyle="{StaticResource FindingText}" MinWidth="165"/>
                   </DataGrid.Columns>
                 </DataGrid>
               </Border>
-              <Grid Grid.Row="2" Margin="0,8,0,0">
+              <Grid Grid.Row="3" Margin="0,8,0,0">
                 <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
                 <TextBox x:Name="Details" IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
                          Text="Запустите сканирование и выберите объект, чтобы открыть сведения."/>
@@ -404,61 +563,116 @@
                   <Button x:Name="InspectButton" Content="Подпись и SHA-256" Click="InspectClick" Visibility="Collapsed" Margin="0"/>
                 </StackPanel>
               </Grid>
-            </Grid>
           </Grid>
         </TabItem>
-        <TabItem x:Name="HistoryTab" Header="↶   Восстановление">
-          <Grid Margin="0,16,0,0">
+        <TabItem x:Name="HistoryTab" Header="Восстановление">
+          <Grid Margin="0,0,8,0">
             <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-            <TextBlock Text="Выберите изменение, чтобы восстановить параметры запуска. Если они уже изменились, приложение сообщит о конфликте."
-                       Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,0,0,12"/>
-            <ListBox Grid.Row="1" x:Name="HistoryList" DisplayMemberPath="Label" Background="{DynamicResource Well}"/>
-            <Button Grid.Row="2" x:Name="RestoreButton" Content="Восстановить выбранное…" Click="RestoreClick" HorizontalAlignment="Left" Margin="0,12,0,0"/>
+            <StackPanel Margin="0,0,0,16">
+              <TextBlock Text="Восстановление" Style="{StaticResource PageHeading}" Margin="0,0,0,4"/>
+              <TextBlock Text="Выберите отключённую запись автозапуска, чтобы вернуть исходные параметры."
+                         Style="{StaticResource Caption}" TextWrapping="Wrap"/>
+            </StackPanel>
+            <ListBox Grid.Row="1" x:Name="HistoryList" DisplayMemberPath="Label" Background="{DynamicResource Well}" SelectionChanged="HistorySelectionChanged"/>
+            <Button Grid.Row="2" x:Name="RestoreButton" Content="Восстановить выбранное…" Click="RestoreClick" IsEnabled="False" HorizontalAlignment="Left" Margin="0,12,0,0"/>
           </Grid>
         </TabItem>
-        <TabItem Header="≡   Охват">
-          <TextBox x:Name="Coverage" Margin="0,12,0,0" IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
-                   Text="После сканирования здесь появятся охват источников, ошибки доступа и изменения относительно предыдущего снимка."/>
+        <TabItem x:Name="CoverageTab" Header="Изменения и охват">
+          <Grid Margin="0,0,8,0">
+            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+            <TextBlock Text="Изменения и охват" Style="{StaticResource PageHeading}"/>
+            <TextBlock Grid.Row="1" x:Name="WindowsHistory" Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,0,0,12"/>
+            <TextBox Grid.Row="2" x:Name="Coverage" IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
+                     Text="Результат проверки источников и сравнение двух снимков появятся после сканирования."/>
+          </Grid>
         </TabItem>
-        <TabItem x:Name="SettingsTab" Header="⚙   Настройки">
-          <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="0,8,0,0">
-            <StackPanel Width="520" HorizontalAlignment="Left" Margin="8,8,16,8">
-              <TextBlock Text="Внешний вид" FontSize="20" FontWeight="SemiBold" Margin="0,0,0,12"/>
-              <DockPanel Margin="0,0,0,8">
-                <ComboBox x:Name="ThemeChoice" DockPanel.Dock="Right" Width="170" SelectionChanged="SettingsChanged" AutomationProperties.Name="Тема">
-                  <ComboBoxItem Content="Тёмная"/><ComboBoxItem Content="Светлая"/><ComboBoxItem Content="Как в Windows"/>
-                </ComboBox>
-                <TextBlock VerticalAlignment="Center" Text="Тема"/>
-              </DockPanel>
-              <DockPanel Margin="0,0,0,12">
-                <ComboBox x:Name="AccentMode" DockPanel.Dock="Right" Width="170" SelectionChanged="SettingsChanged" AutomationProperties.Name="Акцент">
-                  <ComboBoxItem Content="Шалфей"/><ComboBoxItem Content="Кобальт"/><ComboBoxItem Content="Янтарь"/>
-                </ComboBox>
-                <TextBlock VerticalAlignment="Center" Text="Акцент"/>
-              </DockPanel>
-              <CheckBox x:Name="CompactRows" Content="Компактные строки" Checked="SettingsChanged" Unchecked="SettingsChanged" Margin="0,0,0,20"/>
-              <TextBlock Text="Работа в фоне" FontSize="20" FontWeight="SemiBold" Margin="0,0,0,12"/>
-              <CheckBox x:Name="CloseToTray" Content="Крестик сворачивает окно в трей" Checked="SettingsChanged" Unchecked="SettingsChanged" Margin="0,0,0,8"/>
-              <CheckBox x:Name="StartWithWindows" Content="Запускать с Windows сразу в трее" Checked="StartupChanged" Unchecked="StartupChanged" Margin="0,0,0,8"/>
-              <CheckBox x:Name="MinimizeToTray" Content="Кнопка «Свернуть» убирает окно в трей" Checked="SettingsChanged" Unchecked="SettingsChanged" Margin="0,0,0,8"/>
-              <CheckBox x:Name="WatchEnabled" Content="Уведомлять о возврате отключённого автозапуска" Checked="SettingsChanged" Unchecked="SettingsChanged"/>
-              <CheckBox x:Name="QuietGame" Content="Собрать уведомления «Свидетеля» в сводку после игры" Checked="QuietGameChanged" Unchecked="QuietGameChanged" Margin="0,8,0,0"/>
-              <TextBlock Text="Наблюдение работает, пока «Свидетель» открыт или свёрнут в трей." TextWrapping="Wrap"
-                         Foreground="{DynamicResource Muted}" Margin="0,8,0,0"/>
-              <TextBlock x:Name="VersionLabel" Foreground="{DynamicResource Muted}" Margin="0,20,0,0"/>
+        <TabItem x:Name="SettingsTab" Header="Параметры">
+          <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,0,8,4">
+            <StackPanel>
+              <TextBlock Text="Параметры" Style="{StaticResource PageHeading}"/>
+              <TextBlock Text="Оформление" Style="{StaticResource SectionHeading}" Margin="0,0,0,8"/>
+              <Border Style="{StaticResource Surface}" Padding="16,4">
+                <StackPanel>
+                  <DockPanel Margin="0,8">
+                    <ComboBox x:Name="ThemeChoice" DockPanel.Dock="Right" Width="184" SelectionChanged="SettingsChanged" AutomationProperties.Name="Тема">
+                      <ComboBoxItem Content="Тёмная"/><ComboBoxItem Content="Светлая"/><ComboBoxItem Content="Как в Windows"/>
+                    </ComboBox>
+                    <TextBlock VerticalAlignment="Center" Text="Цветовой режим"/>
+                  </DockPanel>
+                  <Border BorderThickness="0,1,0,0" BorderBrush="{DynamicResource Line}">
+                    <DockPanel Margin="0,8">
+                      <ComboBox x:Name="AccentMode" DockPanel.Dock="Right" Width="184" SelectionChanged="SettingsChanged" AutomationProperties.Name="Акцент">
+                        <ComboBoxItem Content="Голубой"/><ComboBoxItem Content="Зелёный"/><ComboBoxItem Content="Янтарный"/>
+                      </ComboBox>
+                      <TextBlock VerticalAlignment="Center" Text="Цвет акцента"/>
+                    </DockPanel>
+                  </Border>
+                  <Border BorderThickness="0,1,0,0" BorderBrush="{DynamicResource Line}" Padding="0,12">
+                    <CheckBox x:Name="CompactRows" Content="Компактные строки сканирования" Style="{StaticResource SettingSwitch}" Checked="SettingsChanged" Unchecked="SettingsChanged"/>
+                  </Border>
+                </StackPanel>
+              </Border>
+              <TextBlock Text="Фоновый режим" Style="{StaticResource SectionHeading}" Margin="0,20,0,8"/>
+              <Border Style="{StaticResource Surface}" Padding="16,4">
+                <StackPanel>
+                  <CheckBox x:Name="CloseToTray" Content="Крестик сворачивает окно в трей" Style="{StaticResource SettingSwitch}" Checked="SettingsChanged" Unchecked="SettingsChanged" Margin="0,8,0,4"/>
+                  <CheckBox x:Name="StartWithWindows" Content="Запускать с Windows сразу в трее" Style="{StaticResource SettingSwitch}" Checked="StartupChanged" Unchecked="StartupChanged" Margin="0,4"/>
+                  <CheckBox x:Name="MinimizeToTray" Content="Кнопка «Свернуть» убирает окно в трей" Style="{StaticResource SettingSwitch}" Checked="SettingsChanged" Unchecked="SettingsChanged" Margin="0,4,0,8"/>
+                </StackPanel>
+              </Border>
+              <TextBlock Text="Уведомления" Style="{StaticResource SectionHeading}" Margin="0,20,0,8"/>
+              <Border Style="{StaticResource Surface}" Padding="16,4">
+                <StackPanel>
+                  <CheckBox x:Name="WatchEnabled" Style="{StaticResource SettingSwitch}" Checked="SettingsChanged" Unchecked="SettingsChanged" Margin="0,8,0,4">
+                    <TextBlock Text="Сообщать о возврате отключённого автозапуска" TextWrapping="Wrap"/>
+                  </CheckBox>
+                  <CheckBox x:Name="QuietGame" Style="{StaticResource SettingSwitch}" Checked="QuietGameChanged" Unchecked="QuietGameChanged" Margin="0,4,0,8">
+                    <TextBlock Text="Показывать сводку уведомлений «Свидетеля» после игры" TextWrapping="Wrap"/>
+                  </CheckBox>
+                </StackPanel>
+              </Border>
+              <TextBlock Text="Автоматизация" Style="{StaticResource SectionHeading}" Margin="0,20,0,8"/>
+              <Border Style="{StaticResource Surface}" Padding="16,4">
+                <StackPanel>
+                  <CheckBox x:Name="AutoSteamChoice" Style="{StaticResource SettingSwitch}" Checked="SettingsChanged" Unchecked="SettingsChanged" Margin="0,8,0,4">
+                    <TextBlock Text="Автоматически записывать обнаруженные игры Steam" TextWrapping="Wrap"/>
+                  </CheckBox>
+                  <CheckBox x:Name="NetworkMonitorChoice" Style="{StaticResource SettingSwitch}" Checked="SettingsChanged" Unchecked="SettingsChanged" Margin="0,4">
+                    <TextBlock Text="Проверять подключение в фоне" TextWrapping="Wrap"/>
+                  </CheckBox>
+                  <CheckBox x:Name="InternetProbeChoice" Style="{StaticResource SettingSwitch}" Checked="SettingsChanged" Unchecked="SettingsChanged" Margin="0,4">
+                    <TextBlock Text="Измерять внешний узел Cloudflare по ICMP" TextWrapping="Wrap"/>
+                  </CheckBox>
+                  <CheckBox x:Name="NetworkAlertsChoice" Style="{StaticResource SettingSwitch}" Checked="SettingsChanged" Unchecked="SettingsChanged" Margin="0,4">
+                    <TextBlock Text="Сообщать об устойчивых пропусках ответов" TextWrapping="Wrap"/>
+                  </CheckBox>
+                  <DockPanel Margin="0,8">
+                    <ComboBox x:Name="NetworkIntervalChoice" DockPanel.Dock="Right" Width="184" SelectionChanged="SettingsChanged"
+                              AutomationProperties.Name="Интервал фоновой проверки">
+                      <ComboBoxItem Content="8 секунд"/><ComboBoxItem Content="15 секунд"/><ComboBoxItem Content="30 секунд"/>
+                    </ComboBox>
+                    <TextBlock Text="Интервал фоновой проверки" VerticalAlignment="Center"/>
+                  </DockPanel>
+                </StackPanel>
+              </Border>
+              <TextBlock x:Name="VersionLabel" Style="{StaticResource Caption}" Margin="0,16,0,0"/>
             </StackPanel>
           </ScrollViewer>
         </TabItem>
-      </TabControl>
-    </Border>
-    <Grid Grid.Row="3">
+        </TabControl>
+      </Grid>
+    </Grid>
+    <Border Grid.Row="3" BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0" Background="{DynamicResource Rail}">
+    <Grid Margin="16,6">
       <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-      <TextBlock x:Name="Status" Text="Готов к проверке" TextWrapping="Wrap" Foreground="{DynamicResource Muted}"/>
+      <TextBlock x:Name="Status" Text="Готово" TextTrimming="CharacterEllipsis" Style="{StaticResource Caption}" VerticalAlignment="Center"
+                 ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
       <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="12,0,0,0">
         <TextBlock x:Name="AdminLabel" Foreground="{DynamicResource Muted}" Margin="0,0,16,0"/>
         <TextBlock Foreground="{DynamicResource Muted}">Разработчик <Hyperlink NavigateUri="https://github.com/icefprogs" RequestNavigate="DeveloperLink" Foreground="{DynamicResource Ink}">@icefprogs</Hyperlink></TextBlock>
       </StackPanel>
       <Button Grid.Column="2" x:Name="CancelButton" Content="Отменить проверку" Click="CancelClick" Visibility="Collapsed" Margin="12,0,0,0"/>
     </Grid>
+    </Border>
   </Grid>
 </Window>
