@@ -77,6 +77,15 @@ public partial class MainWindow
             Capture((FrameworkElement)Content, "gamer.png");
             Sections.SelectedItem = ReviewTab;
             Capture((FrameworkElement)Content, "review.png");
+            Sections.SelectedItem = LibraryTab;
+            SteamGames.ItemsSource = new[] { "Field Notes · демо" };
+            SteamGames.SelectedIndex = 0;
+            GameHistoryList.ItemsSource = new[] { new { Label = "19:12 · Field Notes · 91,6 FPS · 1% low 39,7 FPS" } };
+            SteamStatus.Text = "Демо · установленные игры появятся здесь после чтения библиотеки Steam.";
+            Capture((FrameworkElement)Content, "games.png");
+            Sections.SelectedItem = ServersTab;
+            NetworkLoadResult.Text = "Демо\nПростой · роутер 1 мс · узел 14 мс\nПри загрузке · роутер 2 мс · узел 71 мс";
+            Capture((FrameworkElement)Content, "network.png");
             GamerButton.Content = "Начать сессию";
             ThemeChoice.SelectedIndex = 1;
             AccentMode.SelectedIndex = 1;
@@ -145,27 +154,45 @@ public partial class MainWindow
         var menu = new Forms.ContextMenuStrip();
         void Open() => Dispatcher.Invoke(OpenFromTray);
         menu.Items.Add("Открыть «Свидетель»", null, (_, _) => Open());
+        var mark = menu.Items.Add("Отметить фриз", null, (_, _) => Dispatcher.Invoke(MarkFreeze));
+        var report = menu.Items.Add("Последний разбор", null, (_, _) => Dispatcher.Invoke(() =>
+        {
+            OpenFromTray();
+            if (matchHistory.FirstOrDefault() is { } latest) OpenHistoricalReport(latest);
+        }));
         var scan = menu.Items.Add("Сканировать ПК");
         scan.Click += async (_, _) =>
         {
             Open();
             await ScanSystem();
         };
-        menu.Opening += (_, _) => scan.Enabled = !busy;
+        menu.Opening += (_, _) =>
+        {
+            scan.Enabled = !busy;
+            mark.Enabled = match is not null;
+            report.Enabled = matchHistory.Count > 0;
+        };
         menu.Items.Add("Выйти", null, (_, _) => Dispatcher.Invoke(ExitApplication));
         using var stream = Application.GetResourceStream(new Uri("pack://application:,,,/Assets/Witness.ico")).Stream;
         using var source = new System.Drawing.Icon(stream);
         var icon = (System.Drawing.Icon)source.Clone();
         tray = new Forms.NotifyIcon { Icon = icon, Text = "Свидетель", ContextMenuStrip = menu };
         tray.DoubleClick += (_, _) => Open();
-        tray.BalloonTipClicked += (_, _) => Open();
+        tray.BalloonTipClicked += (_, _) =>
+        {
+            Open();
+            if (openLastReportFromNotification && matchHistory.FirstOrDefault() is { } latest) OpenHistoricalReport(latest);
+            openLastReportFromNotification = false;
+        };
         Closed += (_, _) => { tray.Dispose(); menu.Dispose(); icon.Dispose(); };
         return tray;
     }
 
     private void NotifyReturn(string message)
     {
+        if (QueueGameAlert(message)) return;
         var icon = Tray();
+        openLastReportFromNotification = false;
         icon.Visible = true;
         icon.ShowBalloonTip(5000, "Свидетель · автозапуск вернулся", message, Forms.ToolTipIcon.Warning);
     }

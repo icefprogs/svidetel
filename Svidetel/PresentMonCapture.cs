@@ -31,7 +31,7 @@ internal sealed class PresentMonCapture : IDisposable
                 throw new IOException("Контрольная сумма PresentMon изменилась.");
             var launch = Command("--process_id", pid.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 "--session_name", session, "--output_stdout", "--no_console_stats", "--no_track_input", "--qpc_time",
-                "--v2_metrics", "--exclude_dropped", "--terminate_on_proc_exit", "--timed", "1800", "--terminate_after_timed");
+                "--v2_metrics", "--exclude_dropped", "--terminate_on_proc_exit", "--timed", "14400", "--terminate_after_timed");
             process = Process.Start(launch) ?? throw new IOException("PresentMon не запустился.");
             var stderr = process.StandardError.ReadToEndAsync();
             var reader = new FrameCsv(pid);

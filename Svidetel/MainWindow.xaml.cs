@@ -30,6 +30,7 @@ public partial class MainWindow : Window
         if (Environment.GetCommandLineArgs().Contains("--demo")) LoadDemo();
         InitializePerformance();
         InitializeMatchDashboard();
+        AddQuickSearch();
         StartDefenderDashboard();
         PrepareDemoCapture();
     }
@@ -84,6 +85,7 @@ public partial class MainWindow : Window
                 "\n\nИзменения относительно предыдущего снимка\n" + (string.IsNullOrWhiteSpace(diff) ? "Изменений в снимке нет." : diff) +
                 (accessErrors.Count > 0 ? "\nПри ошибке источника исчезнувшая из снимка запись требует перепроверки." : "");
             if (observations.Count > 0) Coverage.Text += "\n\nИстория наблюдений (время сканирования)\n" + string.Join("\n\n", observations.Select(o => $"{o.ObservedAt:g}\n{o.Changes}"));
+            ShowWindowsHistory(observations);
             engine.Save("inventory.json", result with { Launches = new([], [], []), Removals = [] });
             items = result.Items; demo = false; ApplyFilter();
             Status.Text = $"Объектов: {items.Count} · пробелы в источниках: {accessErrors.Count}";

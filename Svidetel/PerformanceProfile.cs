@@ -18,7 +18,7 @@ internal sealed partial class PerformanceProfile(Engine engine)
     internal enum GameState { Waiting, Restricted, Observing, Boosted, AlreadyConfigured }
     internal sealed record GameReading(GameState State, int Pid = 0, long StartedTicks = 0,
         TimeSpan? CpuTime = null, long? Memory = null);
-    internal sealed record Result(int Lowered, int CloseRequests, PowerResult Power, int Skipped);
+    internal sealed record Result(int Lowered, int CloseRequests, PowerResult Power, int Skipped, string[] Details);
     internal sealed record Progress(int Done, int Total, string Name);
 
     internal Result Begin(bool optimizeBackground, bool closeApps, bool preferPerformance, IProgress<Progress> progress)
@@ -47,6 +47,7 @@ internal sealed partial class PerformanceProfile(Engine engine)
             }
 
             int lowered = 0, closed = 0, skipped = 0;
+            var details = new List<string>();
             for (var i = 0; i < candidates.Count; i++)
             {
                 var candidate = candidates[i];
@@ -55,17 +56,23 @@ internal sealed partial class PerformanceProfile(Engine engine)
                 {
                     using var process = InteractiveProcess.OpenVerified(candidate, requireWindow: false);
                     if (process is null) { skipped++; continue; }
-                    if (closeApps && process.MainWindowHandle != 0 && process.CloseMainWindow()) { closed++; continue; }
+                    if (closeApps && process.MainWindowHandle != 0 && process.CloseMainWindow())
+                    {
+                        closed++;
+                        details.Add($"{candidate.Name} · запрос закрытия окна");
+                        continue;
+                    }
                     if (!optimizeBackground || process.PriorityClass != ProcessPriorityClass.Normal) continue;
                     changes.Lowered.Add(candidate);
                     engine.Save(Journal, changes);
                     process.PriorityClass = ProcessPriorityClass.BelowNormal;
                     lowered++;
+                    details.Add($"{candidate.Name} · снижен приоритет");
                 }
                 catch (Exception ex) when (Unavailable(ex)) { skipped++; }
             }
             current = changes;
-            return new(lowered, closed, power, skipped);
+            return new(lowered, closed, power, skipped, details.Distinct().Take(24).ToArray());
         }
         catch
         {

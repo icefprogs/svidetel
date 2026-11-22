@@ -5,4 +5,5 @@
  <ItemGroup><Compile Include="../Svidetel/BackgroundApps.cs" Link="BackgroundApps.cs"/><Compile Include="../Svidetel/GameTelemetry.cs" Link="GameTelemetry.cs"/></ItemGroup>
  <ItemGroup><Compile Include="../Svidetel/GameTarget.cs" Link="GameTarget.cs"/><Compile Include="../Svidetel/PerformanceProfile.cs" Link="PerformanceProfile.cs"/><Compile Include="../Svidetel/InteractiveProcess.cs" Link="InteractiveProcess.cs"/></ItemGroup>
  <ItemGroup><Compile Include="../Svidetel/GameArchive.cs" Link="GameArchive.cs"/></ItemGroup>
+ <ItemGroup><Compile Include="../Svidetel/SteamLibrary.cs" Link="SteamLibrary.cs"/></ItemGroup>
 </Project>

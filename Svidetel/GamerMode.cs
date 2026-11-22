@@ -147,6 +147,7 @@ public partial class MainWindow
                 };
                 if (result.Lowered == 0 && result.CloseRequests == 0) summary += "\nФоновые процессы остались без изменений";
                 if (result.Skipped > 0) summary += $"\nПропущено из-за доступа или выхода: {result.Skipped}";
+                if (result.Details.Length > 0) summary += "\n" + string.Join("\n", result.Details);
                 Status.Text = (gaming ? "Игровая сессия активна" : "Фоновая оптимизация активна") + $" · Изменён приоритет: {result.Lowered}";
                 if (!gaming) return;
                 GamerSummary.Text = summary + "\n\nSteam, Discord, игры и WinDivert остаются активными.";
@@ -155,8 +156,11 @@ public partial class MainWindow
                 preferences = preferences with { ProbeAddress = ProbeIp.Text.Trim(), BoostGame = BoostSelectedGame.IsChecked == true };
                 SavePreferences();
                 automaticGame = automatic ? preferences.GamePath : null;
-                absentChecks = 0;
                 StartMatch(preferences.GamePath);
+                appliedChanges = summary;
+                var executable = preferences.GamePath;
+                var config = configCopies.FirstOrDefault(copy => SamePath(copy.Game, executable))?.Path;
+                sessionEnvironment = await Task.Run(() => SessionDiagnostics.EnvironmentFor(executable, config));
                 _ = MeasureGame(probe, preferences.GamePath, preferences.BoostGame);
             }, "Применяю параметры фоновой нагрузки…");
         }
@@ -176,7 +180,14 @@ public partial class MainWindow
         using var cancellation = new CancellationTokenSource();
         gameMonitor = cancellation;
         var telemetry = new GameTelemetry(probe);
+        var diagnostics = new SessionDiagnostics();
         var hasGame = GameTarget.CanSelect(game);
+        var watchStarted = Stopwatch.GetTimestamp();
+        int diagnosticTurn = 0, missingGame = 0;
+        bool sawGame = false;
+        bool? steamDownloadActive = null;
+        uint? controllers = null;
+        string? previousPower = null, previousAdapter = null;
         (PerformanceProfile.GameReading Reading, long At)? previous = null;
         try
         {
@@ -184,6 +195,9 @@ public partial class MainWindow
             do
             {
                 var connection = telemetry.Measure(cancellation.Token);
+                (ProcessLoad[] Top, string[] Started)? detail = null;
+                double? steamRate = null;
+                long? gameMemory = null;
                 if (hasGame)
                 {
                     var gameTask = Task.Run(() => (Reading: performance.ObserveGame(game, boost), At: Stopwatch.GetTimestamp()), cancellation.Token);
@@ -191,13 +205,68 @@ public partial class MainWindow
                     cancellation.Token.ThrowIfCancellationRequested();
                     var sample = await gameTask;
                     ShowGameProcess(sample.Reading, previous, sample.At);
+                    sampleGamePid = sample.Reading.Pid;
+                    gameMemory = sample.Reading.Memory;
+                    if (sampleGamePid > 0 && previous?.Reading.Pid != sampleGamePid)
+                        match?.AddEvent("Обнаружен процесс игры");
+                    if (sampleGamePid > 0) { sawGame = true; missingGame = 0; }
+                    else if (sawGame) missingGame++;
                     previous = sample;
                     ObserveFrames(sample.Reading.Pid);
+                    if (diagnosticTurn++ % 2 == 0)
+                    {
+                        var readSteam = diagnosticTurn % 4 == 1;
+                        var observed = await Task.Run(() => (Detail: diagnostics.Observe(sample.Reading.Pid),
+                            SteamRate: readSteam ? SteamLibrary.DownloadRate() : null), cancellation.Token);
+                        detail = observed.Detail;
+                        steamRate = observed.SteamRate;
+                    }
                 }
                 var snapshot = await connection;
                 cancellation.Token.ThrowIfCancellationRequested();
                 ShowGameSnapshot(snapshot, probe is not null);
-                if (snapshot.History.LastOrDefault() is { } sampleNow) match?.AddSample(sampleNow.Cpu, sampleNow.Latency);
+                if (snapshot.History.LastOrDefault() is { } sampleNow)
+                {
+                    var power = SessionDiagnostics.OnBattery();
+                    if (previousPower is not null && power is not null && previousPower != power) match?.AddEvent(power);
+                    if (previousAdapter is not null && previousAdapter != sampleNow.Adapter) match?.AddEvent("Изменился сетевой адаптер");
+                    previousPower = power;
+                    previousAdapter = sampleNow.Adapter;
+                    if (detail is { Started.Length: > 0 } load) match?.AddEvent("Новые фоновые процессы · " + string.Join(", ", load.Started));
+                    var pads = SessionDiagnostics.ConnectedControllers();
+                    if (controllers.HasValue && pads.HasValue && controllers != pads) match?.AddEvent("Изменилось подключение контроллера XInput");
+                    controllers = pads;
+                    if (steamRate is { } rate && steamDownloadActive != (rate > 0.1))
+                    {
+                        if (rate > 0.1) match?.AddEvent($"Steam сообщил о загрузке · {rate:0.#} Мбит/с");
+                        else if (steamDownloadActive == true) match?.AddEvent("Steam сообщил об остановке загрузки");
+                        steamDownloadActive = rate > 0.1;
+                    }
+                    match?.AddSample(sampleNow.Cpu, sampleNow.Latency, sampleNow.Router, sampleNow.RemoteProbed, sampleNow.RouterProbed,
+                        gameMemory is { } memory ? (int)Math.Min(int.MaxValue, memory / 1048576) : null,
+                        detail?.Top, sampleNow.ReceiveKbps, sampleNow.SendKbps, detail.HasValue ? SessionDiagnostics.CpuFrequency() : null);
+                }
+                UpdateOverlay();
+                if (matchingSteam && sampleGamePid > 0) ShowSteamNetworkComparison(snapshot);
+                if (missingGame >= 2 && !busy && !changingProfile)
+                {
+                    match?.AddEvent("Процесс игры завершился");
+                    await ToggleProfile(ProfileMode.Gamer, automatic: true);
+                    if (lastMatch is { } finished) _ = NotifyIfGameCrashed(finished);
+                    return;
+                }
+                if (matchingSteam && !sawGame && Stopwatch.GetElapsedTime(watchStarted) >= TimeSpan.FromMinutes(3) && !busy)
+                {
+                    await ToggleProfile(ProfileMode.Gamer, automatic: true);
+                    SteamStatus.Text = "Выбранный EXE не обнаружен за три минуты. Проверь, какой файл запускает игра.";
+                    return;
+                }
+                if (!matchingSteam && automaticGame is not null && !sawGame &&
+                    Stopwatch.GetElapsedTime(watchStarted) >= TimeSpan.FromSeconds(12) && !busy)
+                {
+                    await ToggleProfile(ProfileMode.Gamer, automatic: true);
+                    return;
+                }
             }
             while (await clock.WaitForNextTickAsync(cancellation.Token));
         }
@@ -217,6 +286,7 @@ public partial class MainWindow
         var running = gameMonitor;
         gameMonitor = null;
         running?.Cancel();
+        sampleGamePid = 0;
     }
 
     private void ShowGameProcess(PerformanceProfile.GameReading reading, (PerformanceProfile.GameReading Reading, long At)? previous, long now)

@@ -33,6 +33,33 @@ try
         "session metrics use one swap chain and separately compute 1% low and P99");
     Check(recap.Points is [{ FrameMs: 50, Cpu: 67, Ping: 12 }] && recap.Marks.Length == 1,
         "freeze timeline aligns local CPU and ping with the dominant frame chain");
+    var legacy = JsonSerializer.Deserialize<MatchResult>(
+        """{"Game":"Fixture.exe","At":"2026-11-21T19:12:00+05:00","Frames":100,"Fps":96,"Low1":20,"P99":10,"Points":[{"Second":2,"FrameMs":50,"Cpu":67,"Ping":12}],"Marks":[2],"Limited":false}""", Engine.Json);
+    Check(legacy is { Points: [{ Ping: 12, RouterProbed: false }], Marks.Length: 1, AutomaticMarks: null },
+        "3.3 session history opens without fabricated fields");
+    var detector = new FreezeDetector();
+    for (int index = 0; index < 120; index++) detector.Observe(10, index / 100.0);
+    detector.Observe(49, 2);
+    detector.Observe(68, 3);
+    detector.Observe(69, 3.1);
+    detector.Observe(71, 5.5);
+    Check(detector.Marks.SequenceEqual(new double[] { 3, 5.5 }) && detector.Live() is { LastMs: 71 },
+        "automatic freezes require a baseline and do not duplicate nearby spikes");
+    var menuFrame = new MatchRecorder("Fixture");
+    for (int index = 0; index < 140; index++) menuFrame.AddFrame(new("game", 16, null));
+    for (int index = 0; index < 120; index++) menuFrame.AddFrame(new("menu", 20, null));
+    menuFrame.AddFrame(new("menu", 300, null));
+    Check(menuFrame.Finish() is { AutomaticMarks.Length: 0, LongFrames: 0 }, "secondary swap chains cannot mark a game freeze");
+    const string steamManifest = "\"AppState\"\r\n{\r\n\t\"appid\"\t\t\"123\"\r\n\t\"name\"\t\t\"Пример\"\r\n\t\"installdir\"\t\t\"Example\"\r\n\t\"StateFlags\"\t\t\"260\"\r\n}";
+    var steamGame = SteamLibrary.Parse(steamManifest, root);
+    Check(steamGame is { Id: 123, Name: "Пример", Updating: true } && steamGame.Folder == Path.Combine(root, "common", "Example"),
+        "Steam parses installed manifests with Unicode and an update flag");
+    Check(SteamLibrary.Parse(steamManifest.Replace("Example", @"..\\Example"), root) is null,
+        "Steam manifest install name cannot leave the library");
+    var steamClock = new DateTime(2026, 11, 22, 13, 0, 0);
+    Check(SteamLibrary.LatestDownloadRate("[2026-11-22 12:59:59] Current download rate: 18.250 Mbps", steamClock) == 18.25 &&
+        SteamLibrary.LatestDownloadRate("[2026-11-22 12:00:00] Current download rate: 18.250 Mbps", steamClock) is null,
+        "Steam traffic display excludes stale download rate entries");
     foreach (var app in new[] { "steam", "Discord", "WinDivert", "winws", "EasyAntiCheat_EOS" })
         Check(!GameTarget.CanSelect(Path.Combine(root, app + ".exe")), $"{app} cannot be selected for a priority boost");
     Check(GameTarget.CanSelect(Path.Combine(root, "DemoGame.exe")) && !GameTarget.CanSelect("DemoGame.exe"), "only an absolute local game executable can be selected");

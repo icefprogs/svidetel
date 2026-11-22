@@ -13,6 +13,7 @@
             <ContextMenu>
               <MenuItem Header="Управление автозапуском…" Click="OptimizeClick"/>
               <MenuItem Header="Проверить папку…" Click="FolderClick"/>
+              <MenuItem Header="Рост папок…" Click="FolderGrowthClick"/>
               <MenuItem Header="Обновить журнал запусков" Click="OriginsClick"/>
               <MenuItem Header="Экспортировать отчёт…" Click="ExportClick"/>
               <MenuItem Header="Копировать сведения об объекте" Click="CopyClick"/>
@@ -83,7 +84,10 @@
                 <StackPanel>
                   <TextBlock Text="Последняя запись" FontSize="17" FontWeight="SemiBold"/>
                   <TextBlock x:Name="HomeLatest" Text="Пока нет завершённых сессий" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,5,0,0"/>
-                  <Button Content="Открыть разбор" Click="OpenReviewClick" HorizontalAlignment="Left" Margin="0,12,0,0"/>
+                  <WrapPanel Margin="0,12,0,0">
+                    <Button Content="Открыть разбор" Click="OpenReviewClick"/>
+                    <Button Content="Посмотреть пример" Click="ShowExampleClick" Margin="8,0,0,0"/>
+                  </WrapPanel>
                 </StackPanel>
               </Border>
               <Border Background="{DynamicResource Well}" CornerRadius="20" Padding="18">
@@ -147,6 +151,7 @@
                   </WrapPanel>
                   <TextBlock x:Name="FreezeStatus" Text="Отметки доступны во время записи" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,0,0,5"/>
                   <TextBlock x:Name="FrameStatus" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,0,0,8"/>
+                  <CheckBox x:Name="LiveOverlayChoice" Content="Оверлей FPS · Ctrl + Shift + F9" Checked="OverlayChanged" Unchecked="OverlayChanged" Margin="0,0,0,8"/>
                   <TextBlock x:Name="GamerSummary" Text="Steam, Discord, игры и WinDivert остаются активными."
                              Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,0,0,12"/>
                   <StackPanel x:Name="GameConfig" Margin="0,0,0,12">
@@ -195,6 +200,60 @@
             </Grid>
           </ScrollViewer>
         </TabItem>
+
+        <TabItem x:Name="LibraryTab" Header="▤   Игры">
+          <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <StackPanel Margin="22,4,20,20">
+              <TextBlock Text="Библиотека Steam" FontSize="25" FontWeight="SemiBold"/>
+              <TextBlock Text="Для замера кадров один раз укажи EXE игры." Foreground="{DynamicResource Muted}" Margin="0,8,0,12"/>
+              <DockPanel Margin="0,0,0,12">
+                <Button DockPanel.Dock="Right" Content="Обновить" Click="SteamRefreshClick" Margin="8,0,0,0"/>
+                <ComboBox x:Name="SteamGames" SelectionChanged="SteamGameChanged" AutomationProperties.Name="Установленные игры Steam"/>
+              </DockPanel>
+              <WrapPanel Margin="0,0,0,8">
+                <Button Content="Запустить через Steam" Click="LaunchSteamGameClick" Background="{DynamicResource Accent}" Foreground="{DynamicResource OnAccent}"/>
+                <Button Content="Выбрать EXE" Click="SelectSteamExecutableClick"/>
+                <Button Content="Проверить готовность" Click="PreflightClick"/>
+              </WrapPanel>
+              <TextBlock x:Name="SteamStatus" TextWrapping="Wrap" Foreground="{DynamicResource Muted}"/>
+              <Expander Header="Профиль и настройки" Foreground="{DynamicResource Ink}" Margin="0,8,0,0">
+                <WrapPanel Margin="0,8,0,0">
+                  <Button Content="Профиль игры" Click="OpenSteamProfileClick"/>
+                  <Button Content="Загрузки Steam" Click="SteamDownloadSettingsClick"/>
+                  <Button Content="Хранилище Windows" Click="StorageSettingsClick"/>
+                </WrapPanel>
+              </Expander>
+              <TextBlock Text="История сессий" FontSize="20" FontWeight="SemiBold" Margin="0,20,0,8"/>
+              <Grid MinHeight="90" MaxHeight="200">
+                <ListBox x:Name="GameHistoryList" DisplayMemberPath="Label" Background="{DynamicResource Well}"/>
+                <TextBlock Text="Для этой игры пока нет записей" Foreground="{DynamicResource Muted}"
+                           HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False">
+                  <TextBlock.Style>
+                    <Style TargetType="TextBlock">
+                      <Setter Property="Visibility" Value="Collapsed"/>
+                      <Style.Triggers>
+                        <DataTrigger Binding="{Binding HasItems, ElementName=GameHistoryList}" Value="False">
+                          <Setter Property="Visibility" Value="Visible"/>
+                        </DataTrigger>
+                      </Style.Triggers>
+                    </Style>
+                  </TextBlock.Style>
+                </TextBlock>
+              </Grid>
+              <WrapPanel Margin="0,10,0,0">
+                <Button Content="Открыть отчёт" Click="OpenHistoryMatchClick"/>
+                <Button Content="Пометить как удачную" Click="MarkGoodMatchClick" Margin="8,0,0,0"/>
+              </WrapPanel>
+              <TextBlock x:Name="GoodMatchDiff" TextWrapping="Wrap" Margin="0,8,0,0"/>
+              <TextBlock Text="Настройки игры" FontSize="20" FontWeight="SemiBold" Margin="0,20,0,8"/>
+              <WrapPanel>
+                <Button Content="Сохранить копию конфига…" Click="SaveGameConfigClick"/>
+                <Button Content="Восстановить копию…" Click="RestoreGameConfigClick" Margin="8,0,0,0"/>
+              </WrapPanel>
+              <TextBlock x:Name="ConfigStatus" TextWrapping="Wrap" Foreground="{DynamicResource Muted}" Margin="0,8,0,0"/>
+            </StackPanel>
+          </ScrollViewer>
+        </TabItem>
         <TabItem x:Name="ReviewTab" Header="∿   Разбор фризов">
           <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="20,8,6,4">
             <StackPanel>
@@ -214,6 +273,7 @@
                       <Path x:Name="GpuTimeline" Stroke="#D8A45E" StrokeThickness="2"/>
                       <Path x:Name="CpuTimeline" Stroke="#94C7AE" StrokeThickness="2"/>
                       <Path x:Name="PingTimeline" Stroke="#6CB3DD" StrokeThickness="2"/>
+                      <Path x:Name="EventTimeline" Stroke="#D8A45E" StrokeThickness="1" StrokeDashArray="1,3"/>
                       <Path x:Name="FreezeTimeline" Stroke="{DynamicResource Ink}" StrokeDashArray="2,3"/>
                     </Canvas>
                   </Viewbox>
@@ -226,17 +286,24 @@
                 <TextBlock Text="Пинг" Foreground="#6CB3DD"/>
               </WrapPanel>
               <TextBlock x:Name="MatchRange" Foreground="{DynamicResource Muted}" TextWrapping="Wrap"/>
+              <TextBlock x:Name="MatchDiagnostics" TextWrapping="Wrap" Margin="0,8,0,0"/>
+              <TextBlock x:Name="MatchWindowsEvents" TextWrapping="Wrap" Margin="0,8,0,0"/>
+              <WrapPanel Margin="0,12,0,0">
+                <Button Content="Сохранить график PNG…" Click="ExportMatchImageClick"/>
+                <Button Content="Проверить вылет" Click="ReviewCrashClick" Margin="8,0,0,0"/>
+              </WrapPanel>
               <TextBlock Text="Сравнение замеров" FontSize="20" FontWeight="SemiBold" Margin="0,20,0,6"/>
               <TextBlock Text="Повтори ту же сцену и настройки. Для каждого прогона нужно не менее 100 кадров." Foreground="{DynamicResource Muted}" TextWrapping="Wrap"/>
               <TextBlock x:Name="ComparisonText" TextWrapping="Wrap" Margin="0,8,0,12"/>
               <WrapPanel>
                 <Button x:Name="BeforeButton" Content="Сохранить как «До»" Click="SaveBeforeClick"/>
                 <Button x:Name="AfterButton" Content="Сохранить как «После»" Click="SaveAfterClick" Margin="8,0,0,0"/>
+                <Button Content="Оптимизировать и записать «После»" Click="OptimizeAndCompareClick" Margin="8,0,0,0"/>
               </WrapPanel>
             </StackPanel>
           </ScrollViewer>
         </TabItem>
-        <TabItem x:Name="ServersTab" Header="⇄   Серверы">
+        <TabItem x:Name="ServersTab" Header="⇄   Сеть">
           <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="20,8,6,4">
             <StackPanel>
               <TextBlock Text="Сравнить серверы" FontSize="28" FontWeight="SemiBold" Margin="0,0,0,12"/>
@@ -249,6 +316,17 @@
               </WrapPanel>
               <TextBlock x:Name="ServerResults" Text="Формат строки: Название = IP. Регион матчмейкинга выбирается в самой игре."
                          Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,14,0,0"/>
+              <TextBlock Text="Задержка под нагрузкой" FontSize="20" FontWeight="SemiBold" Margin="0,20,0,8"/>
+              <TextBlock Text="Запусти обычную загрузку после первого замера. Оба замера используют один IP и шлюз." TextWrapping="Wrap" Foreground="{DynamicResource Muted}"/>
+              <WrapPanel Margin="0,8,0,0">
+                <Button Content="Замер в простое" Click="IdleNetworkClick"/>
+                <Button Content="Замер при загрузке" Click="LoadedNetworkClick" Margin="8,0,0,0"/>
+                <Button Content="Настройки Steam" Click="SteamDownloadSettingsClick" Margin="8,0,0,0"/>
+              </WrapPanel>
+              <TextBlock Text="Название сети или региона" Foreground="{DynamicResource Muted}" Margin="0,12,0,5"/>
+              <TextBox x:Name="NetworkLabel" MaxLength="80" AutomationProperties.Name="Название сети или региона"/>
+              <Button Content="Сохранить сравнение" Click="SaveNetworkRunClick" HorizontalAlignment="Left" Margin="0,8,0,0"/>
+              <TextBlock x:Name="NetworkLoadResult" TextWrapping="Wrap" Margin="0,8,0,0"/>
             </StackPanel>
           </ScrollViewer>
         </TabItem>
@@ -272,6 +350,12 @@
               <TextBlock x:Name="DefenderError" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,8,0,0"/>
               <TextBlock Text="Новые процессы с момента запуска «Свидетеля»" FontSize="19" TextWrapping="Wrap" Margin="0,16,0,6"/>
               <TextBlock x:Name="RecentProcesses" Text="Наблюдение началось." Foreground="{DynamicResource Muted}" TextWrapping="Wrap"/>
+              <TextBlock Text="История снимков Windows" FontSize="19" Margin="0,16,0,6"/>
+              <TextBlock x:Name="WindowsHistory" Text="Сделай два сканирования, чтобы увидеть изменения." TextWrapping="Wrap"/>
+              <WrapPanel Margin="0,8,0,0">
+                <Button Content="Сканирование и подписи" Click="ScanClick"/>
+                <Button Content="Открыть восстановление" Click="OpenWindowsHistoryClick" Margin="8,0,0,0"/>
+              </WrapPanel>
             </StackPanel>
           </ScrollViewer>
         </TabItem>
@@ -323,7 +407,7 @@
             </Grid>
           </Grid>
         </TabItem>
-        <TabItem Header="↶   Восстановление">
+        <TabItem x:Name="HistoryTab" Header="↶   Восстановление">
           <Grid Margin="0,16,0,0">
             <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
             <TextBlock Text="Выберите изменение, чтобы восстановить параметры запуска. Если они уже изменились, приложение сообщит о конфликте."
@@ -358,6 +442,7 @@
               <CheckBox x:Name="StartWithWindows" Content="Запускать с Windows сразу в трее" Checked="StartupChanged" Unchecked="StartupChanged" Margin="0,0,0,8"/>
               <CheckBox x:Name="MinimizeToTray" Content="Кнопка «Свернуть» убирает окно в трей" Checked="SettingsChanged" Unchecked="SettingsChanged" Margin="0,0,0,8"/>
               <CheckBox x:Name="WatchEnabled" Content="Уведомлять о возврате отключённого автозапуска" Checked="SettingsChanged" Unchecked="SettingsChanged"/>
+              <CheckBox x:Name="QuietGame" Content="Собрать уведомления «Свидетеля» в сводку после игры" Checked="QuietGameChanged" Unchecked="QuietGameChanged" Margin="0,8,0,0"/>
               <TextBlock Text="Наблюдение работает, пока «Свидетель» открыт или свёрнут в трей." TextWrapping="Wrap"
                          Foreground="{DynamicResource Muted}" Margin="0,8,0,0"/>
               <TextBlock x:Name="VersionLabel" Foreground="{DynamicResource Muted}" Margin="0,20,0,0"/>

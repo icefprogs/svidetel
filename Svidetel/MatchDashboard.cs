@@ -22,30 +22,53 @@ public partial class MainWindow
     private int framePid;
     private bool hotkeyRegistered, checkingProfiles, editingProfile;
     private string? automaticGame, suppressAutomatic;
-    private int absentChecks;
     private ServerReading? suggestedServer;
     private HwndSource? hotkeySource;
 
     private void OpenGameTabClick(object sender, RoutedEventArgs e) => Sections.SelectedItem = GamerTab;
-    private void OpenReviewClick(object sender, RoutedEventArgs e) => Sections.SelectedItem = ReviewTab;
+    private void OpenReviewClick(object sender, RoutedEventArgs e)
+    {
+        if (useExample)
+        {
+            useExample = false;
+            lastMatch = matchHistory.FirstOrDefault();
+            ShowReport();
+        }
+        Sections.SelectedItem = ReviewTab;
+    }
 
     private void InitializeMatchDashboard()
     {
+        if (captureDemo || demo)
+        {
+            useExample = true;
+            if (!captureDemo) PrepareExampleReport();
+            return;
+        }
         try
         {
             lastMatch = engine.Read<MatchResult>(ReportFile);
             comparison = engine.Read<RunComparison>(ComparisonFile) ?? new();
             profiles = engine.Read<List<GameProfile>>(ProfilesFile) ?? [];
             ServerList.Text = engine.Read<string>(ServersFile) ?? "";
+            LoadLibraryData();
+            QuietGame.IsChecked = engine.Read<bool>("quiet-game.json");
+            ShowWindowsHistory(engine.Read<List<InventoryObservation>>("observations.json") ?? []);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
         {
             Status.Text = "История сессий: " + ex.Message;
         }
         UpdateProfilePicker();
+        gameSettingsLoaded = true;
         ShowReport();
         UpdateHome();
-        if (captureDemo || demo) return;
+        Sections.SelectionChanged += async (_, args) =>
+        {
+            if (ReferenceEquals(args.Source, Sections) && Sections.SelectedItem == LibraryTab && steamLibrary.Length == 0)
+                await RefreshSteamLibrary();
+        };
+        RefreshMatchList();
         var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
         timer.Tick += async (_, _) => await CheckAutomaticProfile();
         timer.Start();
@@ -61,6 +84,7 @@ public partial class MainWindow
         hotkeySource = HwndSource.FromHwnd(hwnd);
         hotkeySource?.AddHook(FreezeMessage);
         hotkeyRegistered = RegisterHotKey(hwnd, FreezeHotkey, 0x4006, 0x77);
+        overlayHotkeyRegistered = RegisterHotKey(hwnd, OverlayHotkey, 0x4006, 0x78);
         FreezeButton.IsEnabled = true;
         FreezeStatus.Text = hotkeyRegistered ? "Ctrl + Shift + F8 — отметить фриз" : "Горячая клавиша занята. Используй кнопку в окне.";
         UpdateHome();
@@ -76,14 +100,30 @@ public partial class MainWindow
         if (hotkeySource is not null)
         {
             if (hotkeyRegistered) UnregisterHotKey(hotkeySource.Handle, FreezeHotkey);
+            if (overlayHotkeyRegistered) UnregisterHotKey(hotkeySource.Handle, OverlayHotkey);
             hotkeySource.RemoveHook(FreezeMessage);
             hotkeySource = null;
         }
         hotkeyRegistered = false;
+        overlayHotkeyRegistered = false;
+        CloseOverlay();
+        matchingSteam = false;
+        steamNetworkBefore = null;
         FreezeButton.IsEnabled = false;
         FreezeStatus.Text = "Запись завершена";
-        lastMatch = recorder.Finish();
+        useExample = false;
+        lastMatch = recorder.Finish() with { Environment = sessionEnvironment, Applied = appliedChanges };
+        sessionEnvironment = null;
+        appliedChanges = null;
         TrySave(ReportFile, lastMatch);
+        RememberMatch(lastMatch);
+        if (recordAfterOptimization && CanCompare(lastMatch))
+        {
+            comparison = comparison with { After = lastMatch };
+            TrySave(ComparisonFile, comparison);
+        }
+        recordAfterOptimization = false;
+        FlushQuietGame();
         ShowReport();
         UpdateHome();
     }
@@ -107,6 +147,11 @@ public partial class MainWindow
     private nint FreezeMessage(nint hwnd, int message, nint key, nint data, ref bool handled)
     {
         if (message == 0x0312 && key == FreezeHotkey) { MarkFreeze(); handled = true; }
+        if (message == 0x0312 && key == OverlayHotkey)
+        {
+            LiveOverlayChoice.IsChecked = LiveOverlayChoice.IsChecked != true;
+            handled = true;
+        }
         return 0;
     }
 
@@ -174,17 +219,11 @@ public partial class MainWindow
 
     private async Task CheckAutomaticProfile()
     {
-        if (checkingProfiles || busy || changingProfile || demo || !profiles.Any(p => p.Automatic) && automaticGame is null) return;
+        if (checkingProfiles || busy || changingProfile || demo || !profiles.Any(p => p.Automatic)) return;
         checkingProfiles = true;
         try
         {
             if (suppressAutomatic is { } suppressed && !await Task.Run(() => IsGameRunning(suppressed))) suppressAutomatic = null;
-            if (activeProfile == ProfileMode.Gamer && automaticGame is { } running)
-            {
-                absentChecks = await Task.Run(() => IsGameRunning(running)) ? 0 : absentChecks + 1;
-                if (absentChecks >= 2) await ToggleProfile(ProfileMode.Gamer);
-                return;
-            }
             if (activeProfile != ProfileMode.Off) return;
             var candidates = profiles.Where(p => p.Automatic && !SamePath(p.Executable, suppressAutomatic)).ToArray();
             var detected = await Task.Run(() => candidates.FirstOrDefault(p => IsGameRunning(p.Executable)));
@@ -223,7 +262,8 @@ public partial class MainWindow
     private void UpdateHome()
     {
         HomeGame.Text = GameTarget.CanSelect(preferences.GamePath) ? Path.GetFileNameWithoutExtension(preferences.GamePath) : "Выбери игру";
-        HomeLatest.Text = lastMatch is { } report ? $"{report.At:g} · {Stats(report)}" : "Пока нет завершённых сессий";
+        var recent = matchHistory.FirstOrDefault() ?? (useExample ? null : lastMatch);
+        HomeLatest.Text = recent is { } report ? $"{report.At:g} · {Stats(report)}" : "Пока нет завершённых сессий";
     }
 
     private void PrepareExampleReport()
@@ -231,8 +271,12 @@ public partial class MainWindow
         double[] frames = [10, 11, 12, 11, 13, 17, 62, 41, 22, 14, 11, 12, 10, 13, 11, 10, 11, 10];
         lastMatch = new(@"C:\Demo\FieldNotes.exe", new DateTimeOffset(2026, 11, 21, 19, 12, 0, TimeSpan.FromHours(5)),
             8200, 91.6, 39.7, 20.4, frames.Select((frame, i) =>
-                new MatchPoint(6 + i, frame, 5 + frame / 5, 29 + (int)(frame / 2), (long)(7 + i % 4))).ToArray(), [13], false);
+                new MatchPoint(6 + i, frame, 5 + frame / 5, 29 + (int)(frame / 2), (long)(7 + i % 4),
+                    1, true, true, 2048 + i, i == 6 ? [new("ExampleSync", 12.6, 248)] : null)).ToArray(), [13], false,
+            [13], 12, [new(12, "Демо · запустилась фоновая синхронизация")]);
+        if (useExample && !demo && !captureDemo) { ShowReport(); return; }
         UpdateHome();
+        HomeLatest.Text = $"{lastMatch.At:g} · {Stats(lastMatch)}";
         HomeGame.Text = "Field Notes · демо";
         DefenderTitle.Text = "Защита в реальном времени включена · демо";
         DefenderEvents.Text = "Здесь появятся обнаружения и действия Microsoft Defender.";
@@ -246,16 +290,22 @@ public partial class MainWindow
 
     private void ShowReport()
     {
-        MatchStats.Text = lastMatch is { } report ? Stats(report) : "Заверши игровую сессию для просмотра результата.";
-        MarksPicker.ItemsSource = lastMatch?.Marks.Select((x, i) => new { Index = i, Label = $"Отметка {i + 1} · {TimeSpan.FromSeconds(x):mm\\:ss}" }).ToArray();
+        MatchStats.Text = lastMatch is { } report ? Stats(report) + (report.Applied is { } applied ? "\n" + applied : "")
+            : "Заверши игровую сессию для просмотра результата.";
+        MarksPicker.ItemsSource = lastMatch?.Marks.Select((x, i) => new { Index = i,
+            Label = $"{(lastMatch.AutomaticMarks?.Contains(x) == true ? "Авто" : "Отметка")} {i + 1} · {TimeSpan.FromSeconds(x):mm\\:ss}" }).ToArray();
         MarksPicker.SelectedIndex = lastMatch?.Marks.Length > 0 ? 0 : -1;
-        BeforeButton.IsEnabled = AfterButton.IsEnabled = CanCompare(lastMatch);
-        ComparisonText.Text = $"До · {(comparison.Before is { } a ? Stats(a) : "нет замера")}\n" +
-            $"После · {(comparison.After is { } b ? Stats(b) : "нет замера")}";
-        if (comparison.Before is { } before && comparison.After is { } after)
+        BeforeButton.IsEnabled = AfterButton.IsEnabled = !useExample && CanCompare(lastMatch);
+        var runs = useExample ? new RunComparison() : comparison;
+        ComparisonText.Text = $"До · {(runs.Before is { } a ? Stats(a) : "нет замера")}\n" +
+            $"После · {(runs.After is { } b ? Stats(b) : "нет замера")}";
+        if (runs.Before is { } before && runs.After is { } after)
             ComparisonText.Text += SamePath(before.Game, after.Game)
                 ? $"\nРазница · {after.Fps - before.Fps:+0.#;-0.#;0} FPS · 1% low {after.Low1 - before.Low1:+0.#;-0.#;0} FPS · P99 {after.P99 - before.P99:+0.#;-0.#;0} мс"
                 : "\nСравнивай два прогона одной игры на одной сцене.";
+        if (runs is { Before: { LongFrames: { } baseLong, Frames: > 0 } oldRun,
+                After: { LongFrames: { } newLong, Frames: > 0 } newRun } && SamePath(oldRun.Game, newRun.Game))
+            ComparisonText.Text += $"\nКадры от 50 мс · {baseLong * 1000.0 / oldRun.Frames:0.#} → {newLong * 1000.0 / newRun.Frames:0.#} на 1000 кадров";
         DrawMatch();
     }
 
@@ -264,7 +314,7 @@ public partial class MainWindow
     private void SaveAfterClick(object sender, RoutedEventArgs e) => SaveComparison(before: false);
     private void SaveComparison(bool before)
     {
-        if (!CanCompare(lastMatch)) return;
+        if (useExample || !CanCompare(lastMatch)) return;
         comparison = before ? comparison with { Before = lastMatch } : comparison with { After = lastMatch };
         TrySave(ComparisonFile, comparison);
         ShowReport();
@@ -273,7 +323,13 @@ public partial class MainWindow
     private void MarksChanged(object sender, SelectionChangedEventArgs e) => DrawMatch();
     private void DrawMatch()
     {
-        if (FrameTimeline is null || lastMatch is not { } report) return;
+        if (FrameTimeline is null) return;
+        if (lastMatch is not { } report)
+        {
+            FrameTimeline.Data = GpuTimeline.Data = CpuTimeline.Data = PingTimeline.Data = EventTimeline.Data = FreezeTimeline.Data = null;
+            MatchDiagnostics.Text = MatchWindowsEvents.Text = MatchRange.Text = "";
+            return;
+        }
         double end = report.Points.LastOrDefault()?.Second ?? 1;
         bool marked = MarksPicker.SelectedIndex >= 0 && MarksPicker.SelectedIndex < report.Marks.Length;
         double mark = marked ? report.Marks[MarksPicker.SelectedIndex] : 0;
@@ -286,8 +342,17 @@ public partial class MainWindow
         PingTimeline.Data = Trace(points, p => p.Ping, 100);
         var x = 700 * (mark - start) / (end - start);
         FreezeTimeline.Data = marked ? new LineGeometry(new(x, 4), new(x, 140)) : null;
+        var timelineEvents = new GeometryGroup();
+        foreach (var evt in report.Events?.Where(evt => start <= evt.Second && evt.Second <= end) ?? [])
+        {
+            var eventX = 700 * (evt.Second - start) / (end - start);
+            timelineEvents.Children.Add(new LineGeometry(new(eventX, 9), new(eventX, 139)));
+        }
+        EventTimeline.Data = timelineEvents;
         MatchRange.Text = points.Length == 0 ? "В выбранном интервале пока нет замеров."
-            : $"{start:0.#}–{end:0.#} с · кадр пик {Format(points.Max(p => p.FrameMs))} мс · GPU кадра {Format(points.Max(p => p.GpuMs))} мс · CPU {points.Max(p => p.Cpu):0}% · пинг {points.Max(p => p.Ping)} мс";
+            : $"{start:0.#}–{end:0.#} с · кадр пик {Format(points.Max(p => p.FrameMs))} мс · GPU кадра {Format(points.Max(p => p.GpuMs))} мс" +
+                $" · CPU {Format(points.Max(p => p.Cpu))}% · ICMP {Format(points.Max(p => p.Ping))} мс";
+        ShowMatchDiagnostics(report, points, start, end);
 
         PathGeometry Trace(MatchPoint[] data, Func<MatchPoint, double?> get, double minimum)
         {
